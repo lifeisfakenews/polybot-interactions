@@ -6,7 +6,6 @@
         "rootDir": "src",
         "declaration": true,
         "declarationMap": true,
-        "sourceMap": true,
 
         "module": "ESNext",
         "target": "ES2020",

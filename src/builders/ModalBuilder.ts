@@ -1,4 +1,4 @@
-import { ModalTextInputStyles, MessageComponentTypes } from "./types";
+import { ModalTextInputStyles, MessageComponentTypes } from "../types";
 
 export type ModalData = {
     title?: string;
