@@ -211,6 +211,13 @@ class ModalInteraction extends TextBasedInteraction {
         this.custom_id = body.data.custom_id;
         this.options = new InteractionOptions(this);
     };
+
+    async update(data:MessageBody) {
+        return await this.respond({ type: types.ResponseTypes.UPDATE_MESSAGE, data: data });
+    };
+    async deferUpdate(ephemeral?:boolean) {
+        return await this.respond({ type: types.ResponseTypes.UPDATE_MESSAGE_DEFERRED, data: { flags: ephemeral ? 1 << 6 : null } });
+    };
 };
 
 class ComponentInteraction extends TextBasedInteraction {
