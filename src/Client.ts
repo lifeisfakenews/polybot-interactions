@@ -5,7 +5,7 @@ import { join } from "path";
 import http, { IncomingMessage, ServerResponse } from "http";
 
 import { RowBuilder, SelectBuilder, EmbedBuilder } from ".";
-import { readJsonBody, sendJson, sendText } from "./helpers/http";
+import { readJsonBody, sendJson, sendText, serveStatic, attachResponseHelpers, type ExpressLikeResponse } from "./helpers/http";
 
 import * as types from "./types";
 
@@ -21,7 +21,7 @@ type MessageBody = {
     flags?: number | null;
 }
 
-export type Config<T = { [key: string]: any }> = {
+export type Config<T = { [key: string]: any }> = T & {
     application: {
         token: string;
         id: string;
@@ -34,10 +34,12 @@ export type Config<T = { [key: string]: any }> = {
     logging?: {
         webhook_url?: string;
     };
-    port: number;
+    web_server: {
+        port: number;
+        interactions_endpoint?: string;
+        publicDir?: string;
+    };
     owners: string[];
-
-    additional: T;
 };
 
 type LogTypes = "error" | "reload" | "eval" | "other";
@@ -60,7 +62,7 @@ const log_formats = {
     "other": { color: 0x00B5AE, name: "Other Log Message", level: "info" },
 } as const;
 
-type RouteHandlerCallback = (req: IncomingMessage, res: ServerResponse) => any;
+type RouteHandlerCallback = (req: IncomingMessage, res: ExpressLikeResponse) => any;
 
 class Client extends EventEmitter {
     config: Config;
@@ -89,7 +91,7 @@ class Client extends EventEmitter {
         this.routes = new Map();
 
         this.web_server = http.createServer((req, res) => this.handleRequest(req, res));
-        this.web_server.listen(this.config.port, () => this.log(`Listening at port: ${this.config.port}`, "reload"));
+        this.web_server.listen(this.config.web_server.port, () => this.log(`Listening at port: ${this.config.web_server.port}`, "reload"));
     };
 
     async init() {
@@ -127,7 +129,7 @@ class Client extends EventEmitter {
     };
 
     private async handleRequest(req:IncomingMessage, res:ServerResponse) {
-        if (req.method === "POST" && req.url === "/_polybot/interactions") {
+        if (req.method === "POST" && req.url === (this.config.web_server.interactions_endpoint ?? "/_polybot/interactions")) {
             const jsonBody = await readJsonBody<types.InteractionBodyWithPing>(req);
             if (!jsonBody) return sendText(res, 400, "Invalid JSON");
 
@@ -152,13 +154,15 @@ class Client extends EventEmitter {
                 this.emit("interaction", interaction);
             } else {
                 await this.dispatchInteraction(interaction);
-            }
+            };
+            return;
         } else if (req.method && this.routes.has(`${req.method.toLowerCase()}__${req.url}`)) {
             const handler = this.routes.get(`${req.method.toLowerCase()}__${req.url}`)!;
-            return await handler(req, res);
-        } else {
-            return sendText(res, 404, "Not Found");
+            return await handler(req, attachResponseHelpers(res));
+        } else if ((req.method === "GET" || req.method === "HEAD") && this.config.web_server.publicDir) {
+            return serveStatic(this.config.web_server.publicDir, req, res);
         };
+        return sendText(res, 404, "Not Found");
     };
 
     async addRouteHandler(path: string, method: "GET" | "POST" | "PUT" | "DELETE" | "PATCH", handler: RouteHandlerCallback) {

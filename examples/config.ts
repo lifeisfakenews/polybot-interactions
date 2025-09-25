@@ -11,17 +11,19 @@ export default {
         "id": "898852327346282527"
     },
     "folders": {
-        "commands": "./commands",
-        "components": "./components"
+        "commands": "./commands",//optional
+        "components": "./components"//optional
     },
     "logging": {
         "webhook_url": "https://ptb.discord.com/api/webhooks/1420840683668897872/x5jya2ZBwq163WB3B8xP2LxSEGQJaPfjf4aL79Zf1dDJXA0uCigWUVn7Xa1TxYLR1A-e"
     },
-    "port": 2000,
+    "web_server": {
+        "port": 2000,
+        "interactions_endpoint": "/_polybot/interactions",//this is the default value (dont need to specify)
+        "publicDir": "./public"//Optionally serve static assets out of the given directory
+    },
     "owners": ["760170825629958184"],
-
-    "additional": {
-        "embed_color": "#3be143",
-    }
+    
+    "embed_color": "#3be143",
 } satisfies Config<AdditionalConfig>;
-// the type passed with Config defines the type of `additional` property
+// the type passed with Config allows you define additonal arbitrary properties

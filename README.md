@@ -55,7 +55,7 @@ client.init();
 ```
 
 4. Create commands
-The commands folder should be placed at the path specified in the config, typically `commands`
+The commands folder should be placed either in the `commands` folder, at the path specified in the config.
 ```ts
 // commands/ping.ts
 import { CommandBuilder, type Command } from "polybot-interactions";
