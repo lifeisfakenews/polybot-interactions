@@ -104,9 +104,9 @@ class Interaction {
 };
 
 class TextBasedInteraction extends Interaction {
-    type: types.InteractionTypes.APPLICATION_COMMAND | types.InteractionTypes.MESSAGE_COMPONENT;
+    type: types.InteractionTypes.APPLICATION_COMMAND | types.InteractionTypes.MESSAGE_COMPONENT | types.InteractionTypes.MODAL_SUBMIT;
 
-    constructor(body:types.InteractionBodyCommand | types.InteractionBodyComponent, res:ServerResponse, client:Client) {
+    constructor(body:types.InteractionBodyCommand | types.InteractionBodyComponent | types.InteractionBodyModal, res:ServerResponse, client:Client) {
         super(body, res, client);
         this.type = body.type;
     };
@@ -200,7 +200,7 @@ class AutocompleteInteraction extends Interaction {
     };
 };
 
-class ModalInteraction extends Interaction {
+class ModalInteraction extends TextBasedInteraction {
     type: types.InteractionTypes.MODAL_SUBMIT;
     custom_id: string;
     options: InteractionOptions;

@@ -103,6 +103,22 @@ await result.reply({ content: `${result.options.get("bla_name")}` });
 ```
 5. Custom IDs are ignored after the `__` to allow passing of data, e.g. `bla__12345`, `bla__5678` and `bla__1234_abc` will all be passed to the handler for `bla`
 
+# Web Server
+
+The framework uses the http web server to receive interactions. You can configure it to also serve static assets or handle other routes.
+
+To serve static assets, set `web_server.publicDir` to the path of the directory containing the assets.
+
+Use `addRouteHandler` to add other routes.
+
+```ts
+client.addRouteHandler("/api/test", (req, res) => {
+    res.json({ message: "Hello World!" });
+});
+```
+
+The req and res objects are `IncomingMessage` and `ServerResponse` from the `http` module, with some additonal express-like methods / properties.
+
 
 ## License
 MIT

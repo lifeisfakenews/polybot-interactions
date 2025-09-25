@@ -5,7 +5,7 @@ import { join } from "path";
 import http, { IncomingMessage, ServerResponse } from "http";
 
 import { RowBuilder, SelectBuilder, EmbedBuilder } from ".";
-import { readJsonBody, sendJson, sendText, serveStatic, attachResponseHelpers, type ExpressLikeResponse } from "./helpers/http";
+import { readJsonBody, sendJson, sendText, serveStatic, attachResponseHelpers, type ExpressLikeResponse, attachRequestHelpers, type ExpressLikeRequest } from "./helpers/http";
 
 import * as types from "./types";
 
@@ -62,7 +62,7 @@ const log_formats = {
     "other": { color: 0x00B5AE, name: "Other Log Message", level: "info" },
 } as const;
 
-type RouteHandlerCallback = (req: IncomingMessage, res: ExpressLikeResponse) => any;
+type RouteHandlerCallback = (req: ExpressLikeRequest, res: ExpressLikeResponse) => any;
 
 class Client extends EventEmitter {
     config: Config;
@@ -158,7 +158,7 @@ class Client extends EventEmitter {
             return;
         } else if (req.method && this.routes.has(`${req.method.toLowerCase()}__${req.url}`)) {
             const handler = this.routes.get(`${req.method.toLowerCase()}__${req.url}`)!;
-            return await handler(req, attachResponseHelpers(res));
+            return await handler(await attachRequestHelpers(req), attachResponseHelpers(res));
         } else if ((req.method === "GET" || req.method === "HEAD") && this.config.web_server.publicDir) {
             return serveStatic(this.config.web_server.publicDir, req, res);
         };

@@ -1,6 +1,17 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { createReadStream, stat, statSync } from "fs";
 import { join, normalize, basename } from "path";
+import { parse as parseQuery } from "querystring";
+
+type CookieOptions = {
+    path?: string;
+    domain?: string;
+    httpOnly?: boolean;
+    secure?: boolean;
+    sameSite?: "Strict" | "Lax" | "None";
+    maxAge?: number; // in seconds
+    expires?: Date;
+};
 
 export type ExpressLikeResponse = ServerResponse & {
     status: (code: number) => ExpressLikeResponse;
@@ -8,6 +19,15 @@ export type ExpressLikeResponse = ServerResponse & {
     text: (msg: string) => void;
     redirect: (url: string, code?: number) => void;
     sendFile: (filePath: string) => void;
+    cookie: (name: string, value: string, opts?: CookieOptions) => ExpressLikeResponse;
+    clearCookie: (name: string, opts?: CookieOptions) => ExpressLikeResponse;
+    send: (body: any) => void;
+};
+
+export type ExpressLikeRequest = IncomingMessage & {
+    cookies: Record<string, string>;
+    query: Record<string, string | string[] | undefined>;
+    body: any;
 };
 
 export function readRawBody(req: IncomingMessage): Promise<Buffer> {
@@ -27,8 +47,8 @@ export async function readJsonBody<T>(req: IncomingMessage) {
     } catch(e) {
         console.log(e);
         return null;
-    };
-};
+    }
+}
 
 export function sendJson(res: ServerResponse, code: number, obj: any) {
     const body = JSON.stringify(obj);
@@ -42,10 +62,8 @@ export function sendText(res: ServerResponse, code: number, text: string) {
 }
 
 export function serveStatic(baseDir: string, req: IncomingMessage, res: ServerResponse) {
-    // Only handle GET/HEAD
     if (req.method !== "GET" && req.method !== "HEAD") return false;
 
-    // Defensive: normalize path, prevent directory traversal
     let reqPath = decodeURIComponent(req.url || "/");
     if (reqPath.startsWith("/")) reqPath = reqPath.slice(1);
     const safePath = normalize(reqPath).replace(/^(\.\.(\/|\\|$))+/, "");
@@ -57,18 +75,15 @@ export function serveStatic(baseDir: string, req: IncomingMessage, res: ServerRe
             res.end("Not Found");
             return;
         }
-
         if (stats.isDirectory()) {
             res.statusCode = 403;
             res.end("Forbidden");
             return;
         }
-
         res.writeHead(200, {
             "Content-Type": getMimeType(filePath),
             "Content-Length": stats.size
         });
-
         if (req.method === "GET") {
             const stream = createReadStream(filePath);
             stream.pipe(res);
@@ -77,48 +92,40 @@ export function serveStatic(baseDir: string, req: IncomingMessage, res: ServerRe
                 res.end("Server Error");
             });
         } else {
-            res.end(); // HEAD request (no body)
+            res.end();
         }
     });
 
     return true;
-};
+}
 
 export function attachResponseHelpers(res2: ServerResponse) {
     let res: ExpressLikeResponse = res2 as any;
-    // Set status (chainable)
+
     res.status = function (code: number) {
         res.statusCode = code;
         return res;
     };
 
-    // Send JSON
     res.json = function (obj: any) {
         const body = JSON.stringify(obj);
-        if (!res.getHeader("Content-Type")) {
-            res.setHeader("Content-Type", "application/json");
-        }
+        if (!res.getHeader("Content-Type")) res.setHeader("Content-Type", "application/json");
         res.setHeader("Content-Length", Buffer.byteLength(body));
         res.end(body);
     };
 
-    // Send text
     res.text = function (msg: string) {
-        if (!res.getHeader("Content-Type")) {
-            res.setHeader("Content-Type", "text/plain; charset=utf-8");
-        }
+        if (!res.getHeader("Content-Type")) res.setHeader("Content-Type", "text/plain; charset=utf-8");
         res.setHeader("Content-Length", Buffer.byteLength(msg));
         res.end(msg);
     };
 
-    // Redirect
     res.redirect = function (url: string, code = 302) {
         res.statusCode = code;
         res.setHeader("Location", url);
         res.end(`Redirecting to ${url}`);
     };
 
-    // Send file
     res.sendFile = function (filePath: string) {
         try {
             const stats = statSync(filePath);
@@ -137,11 +144,97 @@ export function attachResponseHelpers(res2: ServerResponse) {
         }
     };
 
-    return res
+    // Send (auto-detect type)
+    res.send = function (body: any) {
+        if (Buffer.isBuffer(body)) {
+            if (!res.getHeader("Content-Type")) res.setHeader("Content-Type", "application/octet-stream");
+            res.setHeader("Content-Length", body.length);
+            res.end(body);
+        } else if (typeof body === "object" && body !== null) {
+            const json = JSON.stringify(body);
+            if (!res.getHeader("Content-Type")) res.setHeader("Content-Type", "application/json");
+            res.setHeader("Content-Length", Buffer.byteLength(json));
+            res.end(json);
+        } else {
+            const text = body != null ? String(body) : "";
+            if (!res.getHeader("Content-Type")) res.setHeader("Content-Type", "text/html; charset=utf-8");
+            res.setHeader("Content-Length", Buffer.byteLength(text));
+            res.end(text);
+        }
+    };
+
+    res.cookie = function (name: string, value: string, options: CookieOptions = {}) {
+        let cookie = `${encodeURIComponent(name)}=${encodeURIComponent(value)}`;
+        if (options.maxAge !== undefined) cookie += `; Max-Age=${options.maxAge}`;
+        if (options.expires) cookie += `; Expires=${options.expires.toUTCString()}`;
+        if (options.domain) cookie += `; Domain=${options.domain}`;
+        cookie += `; Path=${options.path || "/"}`;
+        if (options.httpOnly) cookie += "; HttpOnly";
+        if (options.secure) cookie += "; Secure";
+        if (options.sameSite) cookie += `; SameSite=${options.sameSite}`;
+
+        const prev = res.getHeader("Set-Cookie");
+        if (prev) {
+            if (Array.isArray(prev)) res.setHeader("Set-Cookie", [...prev, cookie]);
+            else res.setHeader("Set-Cookie", [prev as string, cookie]);
+        } else {
+            res.setHeader("Set-Cookie", cookie);
+        }
+        return res;
+    };
+
+    res.clearCookie = function (name: string, options: CookieOptions = {}) {
+        res.cookie(name, "", { ...options, expires: new Date(0), maxAge: 0 });
+        return res;
+    };
+
+    return res;
+}
+
+export async function attachRequestHelpers(req2: IncomingMessage) {
+    let req: ExpressLikeRequest = req2 as any;
+
+    req.cookies = {};
+    const cookieHeader = req.headers["cookie"];
+    if (cookieHeader) {
+        (cookieHeader as string).split(";").forEach(pair => {
+            const [name, ...rest] = pair.trim().split("=");
+            req.cookies[decodeURIComponent(name)] = decodeURIComponent(rest.join("="));
+        });
+    }
+
+    req.query = {};
+    const url = req.url || "";
+    const idx = url.indexOf("?");
+    if (idx !== -1) {
+        req.query = parseQuery(url.slice(idx + 1));
+    }
+
+    req.body = {};
+    if (["POST", "PUT", "PATCH"].includes((req.method || "").toUpperCase())) {
+        const raw = await readRawBody(req);
+        if (raw.length) {
+            const contentType = req.headers["content-type"] || "";
+            try {
+                if (contentType.includes("application/json")) {
+                    req.body = JSON.parse(raw.toString("utf8"));
+                } else if (contentType.includes("application/x-www-form-urlencoded")) {
+                    req.body = parseQuery(raw.toString("utf8"));
+                } else if (contentType.startsWith("text/")) {
+                    req.body = raw.toString("utf8");
+                } else {
+                    req.body = raw; // fallback raw Buffer
+                }
+            } catch {
+                req.body = null;
+            }
+        }
+    }
+
+    return req;
 }
 
 function getMimeType(file: string): string {
-    // Very minimal mime map
     if (file.endsWith(".html")) return "text/html";
     if (file.endsWith(".css")) return "text/css";
     if (file.endsWith(".js")) return "application/javascript";
