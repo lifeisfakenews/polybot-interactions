@@ -60,16 +60,20 @@ const log_formats = {
     "other": { color: 0x00B5AE, name: "Other Log Message", level: "info" },
 } as const;
 
+type RouteHandlerCallback = (req: IncomingMessage, res: ServerResponse) => any;
+
 class Client extends EventEmitter {
     config: Config;
     private web_server: http.Server;
     private rest: REST;
-    commands: Map<string, types.ExportedCommand>;
-    components: Map<string, types.ExportedComponent>;
+    commands: Map<string, types.Command>;
+    components: Map<string, types.Component>;
     private users: Map<string, types.User>;
     private guilds: Map<string, types.Guild>;
     private channels: Map<string, types.Channel>;
     private members: Map<string, types.GuildMember>;
+
+    private routes: Map<string, RouteHandlerCallback>;
 
     constructor(given_config:Config) {
         super();
@@ -82,6 +86,7 @@ class Client extends EventEmitter {
         this.guilds = new Map();
         this.channels = new Map();
         this.members = new Map();
+        this.routes = new Map();
 
         this.web_server = http.createServer((req, res) => this.handleRequest(req, res));
         this.web_server.listen(this.config.port, () => this.log(`Listening at port: ${this.config.port}`, "reload"));
@@ -121,8 +126,8 @@ class Client extends EventEmitter {
         this.registerCommands();
     };
 
-    async handleRequest(req:IncomingMessage, res:ServerResponse) {
-        if (req.method === "POST" && req.url === "/api/interactions") {
+    private async handleRequest(req:IncomingMessage, res:ServerResponse) {
+        if (req.method === "POST" && req.url === "/_polybot/interactions") {
             const jsonBody = await readJsonBody<types.InteractionBodyWithPing>(req);
             if (!jsonBody) return sendText(res, 400, "Invalid JSON");
 
@@ -148,12 +153,19 @@ class Client extends EventEmitter {
             } else {
                 await this.dispatchInteraction(interaction);
             }
+        } else if (req.method && this.routes.has(`${req.method.toLowerCase()}__${req.url}`)) {
+            const handler = this.routes.get(`${req.method.toLowerCase()}__${req.url}`)!;
+            return await handler(req, res);
         } else {
             return sendText(res, 404, "Not Found");
         };
     };
 
-    async dispatchInteraction(interaction: types.Interaction) {
+    async addRouteHandler(path: string, method: "GET" | "POST" | "PUT" | "DELETE" | "PATCH", handler: RouteHandlerCallback) {
+        this.routes.set(`${method.toLowerCase()}__${path}`, handler);
+    };
+
+    private async dispatchInteraction(interaction: types.Interaction) {
         if (interaction.type === types.InteractionTypes.APPLICATION_COMMAND) {
             try {
                 const command = this.commands.get(interaction.command_name);
@@ -244,6 +256,10 @@ class Client extends EventEmitter {
             debug: "\x1b[36m",
         };
         console.log(`${color[level]}[PolyBot]\x1b[0m ${content}`);
+    };
+
+    private toRedCodeBlock(text:string) {
+        return `\`\`\`ansi\n\u001b[1;31m${text}\n\`\`\``;
     };
 
     async getUser(userId:string) {
@@ -432,6 +448,7 @@ class Client extends EventEmitter {
         if (!response || !response.ok) return null;
         return await response.json() as types.GuildRole;
     };
+
     async takeRole(roleId:string, guildId:string, memberId:string, reason?:string) {
         const log = this.log;
         const response = await this.rest.fetch(`https://discord.com/api/guilds/${guildId}/members/${memberId}/roles/${roleId}`, {
@@ -686,10 +703,6 @@ class Client extends EventEmitter {
     generateSnowflake() {
         let timestamp = new Date((Math.floor(Date.now() / 1000)) * 4194304 - 1420070400000);
         return (Math.ceil(timestamp.getTime() * 100)).toString();
-    };
-
-    toRedCodeBlock(text:string) {
-        return `\`\`\`ansi\n\u001b[1;31m${text}\n\`\`\``;
     };
 };
 

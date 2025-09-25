@@ -1,4 +1,4 @@
 export * from "./builders/index";
-export { Client } from "./Client";
+export { Client, type Config } from "./Client";
 
 export * from "./types";

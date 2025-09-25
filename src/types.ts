@@ -12,20 +12,20 @@ export type ExtendedRequest<T = { [key: string]: any }> = IncomingMessage & {
     body: T;
 }
 
-export type ExportedCommand = {
+export type Command = {
     visible?: boolean;
     staff_only?: boolean;
     command: CommandBuilder;
     execute: (client: Client, interaction: CommandInteraction) => Promise<void>;
     autocomplete?: (client: Client, interaction: AutocompleteInteraction) => Promise<void>;
 }
-export type ExportedComponent = {
+export type Component = {
     custom_id: string;
-    type: ExportedComponentTypes;
+    type: ComponentTypes;
     staff_only?: boolean;
     execute: (client: Client, interaction: ComponentInteraction) => Promise<void>;
 }
-export enum ExportedComponentTypes {
+export enum ComponentTypes {
     "BUTTON" = 1,
     "STRING_SELECT" = 2,
     "ROLE_SELECT" = 3,
