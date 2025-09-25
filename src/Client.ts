@@ -1,17 +1,16 @@
 import { readdirSync } from "node:fs";
 import { EventEmitter } from "node:events";
-import cookieparser from "cookie-parser";
-import express from "express";
 import nacl from "tweetnacl";
 import { join } from "path";
+import http, { IncomingMessage, ServerResponse } from "http";
 
-import { RowBuilder, SelectBuilder, EmbedBuilder } from "./";
+import { RowBuilder, SelectBuilder, EmbedBuilder } from ".";
+import { readJsonBody, sendJson, sendText } from "./helpers/http";
 
-import type * as types from "../types";
+import * as types from "./types";
 
-import { Interaction, REST } from ".";
-
-import config from "../config.json";
+import { CommandInteraction, AutocompleteInteraction, ModalInteraction, ComponentInteraction } from "./helpers/Interaction";
+import { REST } from "./helpers/rest";
 
 type MessageBody = {
     content?: string;
@@ -22,20 +21,27 @@ type MessageBody = {
     flags?: number | null;
 }
 
-// export type Config = {
-//     token: string;
-//     id: string;
-//     port: number;
-//     public_key: string;
-//     mongodb: string;
-//     embedColor: string;
-//     webhook: string;
-//     owners: string[];
+export type Config<T = { [key: string]: any }> = {
+    application: {
+        token: string;
+        id: string;
+        public_key: string;
+    };
+    folders?: {
+        commands?: string;
+        components?: string;
+    };
+    logging?: {
+        webhook_url?: string;
+    };
+    port: number;
+    owners: string[];
 
-//     [key: string]: any;
-// }
+    additional: T;
+};
 
 type LogTypes = "error" | "reload" | "eval" | "other";
+type LogLevel = "error" | "warn" | "info" | "debug";
 type LogOptions = {
     cb?: string;
     footer?: string;
@@ -44,48 +50,147 @@ type LogOptions = {
 }
 
 interface ClientEvents {
-    interaction: Interaction;
+    interaction: types.Interaction;
 }
 
+const log_formats = {
+    "error": { color: 0xEA2920, name: "Client Error", level: "error" },
+    "reload": { color: 0x37FB70, name: "Bot Restarted", level: "info" },
+    "eval": { color: 0xFF36E1, name: "Code Evalutated", level: "info" },
+    "other": { color: 0x00B5AE, name: "Other Log Message", level: "info" },
+} as const;
+
 class Client extends EventEmitter {
-    config: typeof config;
-    commands_folder?: string;
-    components_folder?: string;
-    web_server: express.Express;
-    rest: REST;
+    config: Config;
+    private web_server: http.Server;
+    private rest: REST;
     commands: Map<string, types.ExportedCommand>;
     components: Map<string, types.ExportedComponent>;
-    users: Map<string, types.User>;
-    guilds: Map<string, types.Guild>;
-    channels: Map<string, types.Channel>;
-    members: Map<string, types.GuildMember>;
-    user: Promise<types.User>;
-    ;
-    constructor(given_config:(typeof config), options:{commands_folder?:string, components_folder?:string}) {
+    private users: Map<string, types.User>;
+    private guilds: Map<string, types.Guild>;
+    private channels: Map<string, types.Channel>;
+    private members: Map<string, types.GuildMember>;
+
+    constructor(given_config:Config) {
         super();
 
         this.config = given_config;
-        this.commands_folder = options.commands_folder;
-        this.components_folder = options.components_folder;
-        this.web_server = express();
-        this.rest = new REST(this.config.token);
+        this.rest = new REST(this.config.application.token);
         this.commands = new Map();
         this.components = new Map();
         this.users = new Map();
         this.guilds = new Map();
         this.channels = new Map();
         this.members = new Map();
-        this.user = this.getUser(this.config.id) as Promise<types.User>;
 
-        this.web_server.use((req, res, next) => {
-            res.header("Access-Control-Allow-Origin", "*");
-            res.header("Access-Control-Allow-Headers", "*");
-            res.header("Access-Control-Allow-Methods", "*");
-            res.header("Access-Control-Allow-Credentials", "true");
-            next();
-        });
+        this.web_server = http.createServer((req, res) => this.handleRequest(req, res));
+        this.web_server.listen(this.config.port, () => this.log(`Listening at port: ${this.config.port}`, "reload"));
+    };
 
-        this.web_server.use(express.text(), express.json(), express.urlencoded(), cookieparser());
+    async init() {
+        if (this.config.folders?.commands) {
+            const commandFiles = readdirSync(this.config.folders.commands).filter(file => file.endsWith(".js") || file.endsWith(".ts"));
+    
+            for (const path of commandFiles) {
+                try {
+                    const pathname = join(this.config.folders.commands, path);
+                    const module = await import(pathname);
+                    const command = module.default;
+                    this.commands.set(command.command.data.name, command);
+                } catch (error:any) {
+                    this.log(`Error loading command file \`${path}\`: \`${error}\``, "error");
+                }
+            };
+        }
+
+        if (this.config.folders?.components) {
+            const componentFiles = readdirSync(this.config.folders.components).filter(file => file.endsWith(".js") || file.endsWith(".ts"));
+    
+            for (const path of componentFiles) {
+                try {
+                    const pathname = join(this.config.folders.components, path);
+                    const module = await import(pathname);
+                    const component = module.default;
+                    this.components.set(component.custom_id, component);
+                } catch (error:any) {
+                    this.log(`Error loading component file \`${path}\`: \`${error}\``, "error");
+                }
+            };
+        };
+
+        this.registerCommands();
+    };
+
+    async handleRequest(req:IncomingMessage, res:ServerResponse) {
+        if (req.method === "POST" && req.url === "/api/interactions") {
+            const jsonBody = await readJsonBody<types.InteractionBodyWithPing>(req);
+            if (!jsonBody) return sendText(res, 400, "Invalid JSON");
+
+            const signature = req.headers["x-signature-ed25519"]!;
+            const timestamp = req.headers["x-signature-timestamp"]!;
+            /* @ts-ignore */
+            const isVerified = nacl.sign.detached.verify(Buffer.from(`${timestamp}${JSON.stringify(jsonBody)}`), Buffer.from(signature, "hex"), Buffer.from(this.config.application.public_key, "hex"));
+            if (!isVerified) return sendText(res, 401, "invalid request signature");
+            if (jsonBody.type === types.InteractionTypes.PING) return sendJson(res, 200, { type: types.ResponseTypes.PONG });
+
+            const req2 = req as types.ExtendedRequest<types.InteractionBody>;
+            req2.body = jsonBody;
+
+            let interaction;
+            if (jsonBody.type === types.InteractionTypes.APPLICATION_COMMAND) interaction = new CommandInteraction(jsonBody, res, this);
+            else if (jsonBody.type === types.InteractionTypes.AUTOCOMPLETE) interaction = new AutocompleteInteraction(jsonBody, res, this);
+            else if (jsonBody.type === types.InteractionTypes.MESSAGE_COMPONENT) interaction = new ComponentInteraction(jsonBody, res, this);
+            else if (jsonBody.type === types.InteractionTypes.MODAL_SUBMIT) interaction = new ModalInteraction(jsonBody, res, this);
+
+            if (!interaction) return;
+            if (this.listenerCount("interaction") > 0) {
+                this.emit("interaction", interaction);
+            } else {
+                await this.dispatchInteraction(interaction);
+            }
+        } else {
+            return sendText(res, 404, "Not Found");
+        };
+    };
+
+    async dispatchInteraction(interaction: types.Interaction) {
+        if (interaction.type === types.InteractionTypes.APPLICATION_COMMAND) {
+            try {
+                const command = this.commands.get(interaction.command_name);
+                if (!command) return await interaction.reply({ content: `No handler found for command ${interaction.command_name}` }, true);
+                if (command.staff_only && !this.config.owners.includes(interaction.user.id)) return await interaction.reply({ content: "You don't have permission to use this command!" }, true);
+
+                await command.execute(this, interaction);
+            } catch (e:any) {
+                const error_id = this.generateSnowflake();
+                this.log(`## Command Error\nID: \`${error_id}\`\nCommand: ${interaction.command_name} ${interaction.options && interaction.options.subcommand ? `${interaction.options.group ?? ""} ${interaction.options.subcommand}` : ""}\nUser: ${interaction.user.username} (\`${interaction.user.id}\`)\nOptions: ${interaction.options.toArray().map(x => `- ${x.name}: \`${x.value}\``)}\nError:\n\`\`\`${e.toString()}\`\`\``, "error");
+                await interaction.reply({ content: `There was an error while executing this command!\n${this.toRedCodeBlock(e.toString())}\nError ID: \`${error_id}\`` }, true);
+            };
+        } else if (interaction.type === types.InteractionTypes.AUTOCOMPLETE) {
+            try {
+                const command = this.commands.get(interaction.command_name);
+                if (!command || !command.autocomplete) return await interaction.autocomplete([{ name: "No autocomplete handler has been defined", value: "__error__no_handler" }])
+                await command.autocomplete(this, interaction);
+            } catch (e:any) {
+                const error_id = this.generateSnowflake();
+                this.log(`## Autocomplete Error\nID: \`${error_id}\`\nCommand: ${interaction.command_name} ${interaction.options && interaction.options.subcommand ? `${interaction.options.group ?? ""} ${interaction.options.subcommand}` : ""}\nUser: ${interaction.user.username} (\`${interaction.user.id}\`)\nOptions: ${interaction.options.toArray().map(x => `- ${x.name}: \`${x.value}\``)}\nError:\n\`\`\`${e.toString()}\`\`\``, "error");
+                await interaction.autocomplete([{ name: `An error occurred while fetching values. ID ${error_id}`, value: `__error__${error_id}` }]);
+            };
+        } else if (interaction.type === types.InteractionTypes.MESSAGE_COMPONENT) {
+            try {
+                if (!interaction.custom_id) return await interaction.reply({ content: "Invalid component interaction" }, true);
+                const custom_id = interaction.custom_id.split("__")[0];
+                const component = this.components.get(custom_id);
+                if (!component) return await interaction.reply({ content: `No handler found for ${custom_id}\nNote that anything after double underscores (__) is treated as a parameter and is ignored.` }, true);
+                if (component.staff_only && !this.config.owners.includes(interaction.user.id)) return await interaction.reply({ content: "You don't have permission to use this component!" }, true);
+
+                await component.execute(this, interaction);
+            } catch (e:any) {
+                const error_id = this.generateSnowflake();
+                this.log(`## Component Error\nID: \`${error_id}\`\Custom ID: ${interaction.custom_id}\nUser: ${interaction.user.username} (\`${interaction.user.id}\`)\nOptions: ${interaction.options.toArray().map(x => `- ${x.name}: \`${x.value}\``)}\nError:\n\`\`\`${e.toString()}\`\`\``, "error");
+                await interaction.reply({ content: `There was an error while executing this command!\n${this.toRedCodeBlock(e.toString())}\nError ID: \`${error_id}\`` }, true);
+            };
+        };
     };
 
     emit<K extends keyof ClientEvents>(event: K, payload: ClientEvents[K]): boolean {
@@ -100,43 +205,45 @@ class Client extends EventEmitter {
 
     async log(items:any, options?:LogOptions|LogTypes) {
         if (typeof options == "string") options = {type: options};
-        const log_formats = {
-            "error": { color: 0xEA2920, name: "Client Error" },
-            "reload": { color: 0x37FB70, name: "Bot Restarted" },
-            "eval": { color: 0xFF36E1, name: "Code Evalutated" },
-            "other": { color: 0x00B5AE, name: "Other Log Message" },
-        }
-        const webhook_data = log_formats[options?.type ?? "other"] ?? log_formats.other;
-        let content = options?.cb ? `\`\`\`${options.cb}\n${items}\n\`\`\`` : `${items}`;
-        content = content.replaceAll("/usr/src/app/node_modules/", "@")
-        content = content.replaceAll("    at ", "  ")
-        const request = await fetch(this.config.webhook, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                username: webhook_data.name,
-                avatar_url: `https://resources.votemanager.xyz/assets/logs/${options?.type ?? "other"}.png`,
-                embeds: [{
-                    color: webhook_data.color,
-                    description: `${content.length > 2000 ? content.slice(0, 1950) + `\n+${content.length - 1950} more characters` : content}`,
-                    footer: options?.footer ? { text: options.footer } : undefined,
-                    author: options?.author ? { name: options.author } : undefined,
-                }]
-            })
-        }).catch(console.log);
-        console.log(new Date().toISOString());
-        console.log(items);
+        const details = log_formats[options?.type ?? "other"];
+        if (this.config.logging?.webhook_url) {
+            let content = options?.cb ? `\`\`\`${options.cb}\n${items}\n\`\`\`` : `${items}`;
+            content = content.replaceAll("/usr/src/app/node_modules/", "@")
+            content = content.replaceAll("    at ", "  ")
+            const request = await fetch(this.config.logging.webhook_url, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    username: details.name,
+                    avatar_url: `https://resources.votemanager.xyz/assets/logs/${options?.type ?? "other"}.png`,
+                    embeds: [{
+                        color: details.color,
+                        description: `${content.length > 2000 ? content.slice(0, 1950) + `\n+${content.length - 1950} more characters` : content}`,
+                        footer: options?.footer ? { text: options.footer } : undefined,
+                        author: options?.author ? { name: options.author } : undefined,
+                    }]
+                })
+            }).catch(this.logToConsole);
 
-        if (!request || !request.ok) {
-            if (request) {
-                console.log(`SENDING LOG MESSAGE TO DISCORD FAILED: ${request.status} ${request.statusText}`);
-                console.log(`DISCORD REPSONSE BODY:\n${await request.text()}`);
-            }
-            console.log(`ORIGINAL LOG MESSAGE:\n${items}`);
+            if (request && !request.ok) {
+                this.logToConsole(`Failed to send message to Discord Webhook (${request.status} ${request.statusText}). Response body:`, "error");
+                this.logToConsole(await request.text(), "error");
+            };
         };
-        console.log("--------------------------------------------------------------------------------");
+
+        this.logToConsole(items, details.level);
+    };
+
+    private logToConsole(content:string, level:LogLevel = "info") {
+        const color = {
+            error: "\x1b[31m",
+            warn: "\x1b[33m",
+            info: "\x1b[36m",
+            debug: "\x1b[36m",
+        };
+        console.log(`${color[level]}[PolyBot]\x1b[0m ${content}`);
     };
 
     async getUser(userId:string) {
@@ -146,7 +253,7 @@ class Client extends EventEmitter {
         const response = await this.rest.fetch(`https://discord.com/api/users/${userId}`, {
             method: "GET",
             headers: {
-                Authorization: `Bot ${this.config.token}`,
+                Authorization: `Bot ${this.config.application.token}`,
                 "Content-Type": "application/json"
             }
         }).catch(e => log(e, "error"));
@@ -165,7 +272,7 @@ class Client extends EventEmitter {
         const response = await this.rest.fetch(`https://discord.com/api/guilds/${guildId}`, {
             method: "GET",
             headers: {
-                Authorization: `Bot ${this.config.token}`,
+                Authorization: `Bot ${this.config.application.token}`,
                 "Content-Type": "application/json"
             }
         }).catch(e => log(e, "error"));
@@ -184,7 +291,7 @@ class Client extends EventEmitter {
             const response = await this.rest.fetch(`https://discord.com/api/users/@me/guilds/${first_pass ? "" : `?after=${data[199].id}`}`, {
                 method: "GET",
                 headers: {
-                    Authorization: `Bot ${this.config.token}`,
+                    Authorization: `Bot ${this.config.application.token}`,
                     "Content-Type": "application/json"
                 },
             }).catch(e => log(e, "error"));
@@ -205,7 +312,7 @@ class Client extends EventEmitter {
         const response = await this.rest.fetch(`https://discord.com/api/guilds/${guildId}/members/${userId}`, {
             method: "GET",
             headers: {
-                Authorization: `Bot ${this.config.token}`,
+                Authorization: `Bot ${this.config.application.token}`,
                 "Content-Type": "application/json"
             }
         }).catch(e => log(e, "error"));
@@ -223,7 +330,7 @@ class Client extends EventEmitter {
             const response = await this.rest.fetch(`https://discord.com/api/guilds/${guildId}/members/${first_pass ? "" : `?after=${data[999].user.id}`}`, {
                 method: "GET",
                 headers: {
-                    Authorization: `Bot ${this.config.token}`,
+                    Authorization: `Bot ${this.config.application.token}`,
                     "Content-Type": "application/json"
                 },
             }).catch(e => log(e, "error"));
@@ -242,7 +349,7 @@ class Client extends EventEmitter {
         const response = await this.rest.fetch(`https://discord.com/api/guilds/${guildId}/roles`, {
             method: "GET",
             headers: {
-                Authorization: `Bot ${this.config.token}`,
+                Authorization: `Bot ${this.config.application.token}`,
                 "Content-Type": "application/json"
             }
         }).catch(e => log(e, "error"));
@@ -256,7 +363,7 @@ class Client extends EventEmitter {
         const response = await this.rest.fetch(`https://discord.com/api/guilds/${guildId}/roles`, {
             method: "POST",
             headers: {
-                Authorization: `Bot ${this.config.token}`,
+                Authorization: `Bot ${this.config.application.token}`,
                 "X-Audit-Log-Reason": reason ?? "",
                 "Content-Type": "application/json"
             },
@@ -278,7 +385,7 @@ class Client extends EventEmitter {
         const response = await this.rest.fetch(`https://discord.com/api/guilds/${guildId}/roles${roleId}`, {
             method: "PATCH",
             headers: {
-                Authorization: `Bot ${this.config.token}`,
+                Authorization: `Bot ${this.config.application.token}`,
                 "X-Audit-Log-Reason": reason ?? "",
                 "Content-Type": "application/json"
             },
@@ -300,7 +407,7 @@ class Client extends EventEmitter {
         const response = await this.rest.fetch(`https://discord.com/api/guilds/${guildId}/roles${roleId}`, {
             method: "DELETE",
             headers: {
-                Authorization: `Bot ${this.config.token}`,
+                Authorization: `Bot ${this.config.application.token}`,
                 "X-Audit-Log-Reason": reason ?? "",
                 "Content-Type": "application/json"
             },
@@ -315,7 +422,7 @@ class Client extends EventEmitter {
         const response = await this.rest.fetch(`https://discord.com/api/guilds/${guildId}/members/${memberId}/roles/${roleId}`, {
             method: "PUT",
             headers: {
-                Authorization: `Bot ${this.config.token}`,
+                Authorization: `Bot ${this.config.application.token}`,
                 "X-Audit-Log-Reason": reason ?? "",
                 "Content-Type": "application/json"
             },
@@ -330,7 +437,7 @@ class Client extends EventEmitter {
         const response = await this.rest.fetch(`https://discord.com/api/guilds/${guildId}/members/${memberId}/roles/${roleId}`, {
             method: "DELETE",
             headers: {
-                Authorization: `Bot ${this.config.token}`,
+                Authorization: `Bot ${this.config.application.token}`,
                 "X-Audit-Log-Reason": reason ?? "",
                 "Content-Type": "application/json"
             },
@@ -349,7 +456,7 @@ class Client extends EventEmitter {
         const response = await this.rest.fetch(`https://discord.com/api/channels/${channelId}`, {
             method: "GET",
             headers: {
-                Authorization: `Bot ${this.config.token}`,
+                Authorization: `Bot ${this.config.application.token}`,
                 "Content-Type": "application/json"
             }
         }).catch(e => log(e, "error"));
@@ -365,7 +472,7 @@ class Client extends EventEmitter {
         const response = await this.rest.fetch(`https://discord.com/api/guilds/${guildId}/channels`, {
             method: "GET",
             headers: {
-                Authorization: `Bot ${this.config.token}`,
+                Authorization: `Bot ${this.config.application.token}`,
                 "Content-Type": "application/json"
             }
         }).catch(e => log(e, "error"));
@@ -379,7 +486,7 @@ class Client extends EventEmitter {
         const response = await this.rest.fetch(`https://discord.com/api/guilds/${guildId}/channels`, {
             method: "POST",
             headers: {
-                Authorization: `Bot ${this.config.token}`,
+                Authorization: `Bot ${this.config.application.token}`,
                 "X-Audit-Log-Reason": reason ?? "",
                 "Content-Type": "application/json"
             },
@@ -399,7 +506,7 @@ class Client extends EventEmitter {
         const response = await this.rest.fetch(`https://discord.com/api/channels/${channelId}`, {
             method: "PATCH",
             headers: {
-                Authorization: `Bot ${this.config.token}`,
+                Authorization: `Bot ${this.config.application.token}`,
                 "X-Audit-Log-Reason": reason ?? "",
                 "Content-Type": "application/json"
             },
@@ -418,7 +525,7 @@ class Client extends EventEmitter {
         const response = await this.rest.fetch(`https://discord.com/api/channels/${channelId}/permissions/${overwriteId}`, {
             method: "PUT",
             headers: {
-                Authorization: `Bot ${this.config.token}`,
+                Authorization: `Bot ${this.config.application.token}`,
                 "X-Audit-Log-Reason": reason ?? "",
                 "Content-Type": "application/json"
             },
@@ -437,7 +544,7 @@ class Client extends EventEmitter {
         const response = await this.rest.fetch(`https://discord.com/api/channels/${channelId}`, {
             method: "DELETE",
             headers: {
-                Authorization: `Bot ${this.config.token}`,
+                Authorization: `Bot ${this.config.application.token}`,
                 "X-Audit-Log-Reason": reason ?? "",
                 "Content-Type": "application/json"
             },
@@ -451,7 +558,7 @@ class Client extends EventEmitter {
         const response = await this.rest.fetch(`https://discord.com/api/channels/${channelId}/permissions/${overwriteId}`, {
             method: "DELETE",
             headers: {
-                Authorization: `Bot ${this.config.token}`,
+                Authorization: `Bot ${this.config.application.token}`,
                 "X-Audit-Log-Reason": reason ?? "",
                 "Content-Type": "application/json"
             },
@@ -466,7 +573,7 @@ class Client extends EventEmitter {
         const response = await this.rest.fetch(`https://discord.com/api/channels/${channelId}/threads`, {
             method: "POST",
             headers: {
-                Authorization: `Bot ${this.config.token}`,
+                Authorization: `Bot ${this.config.application.token}`,
                 "X-Audit-Log-Reason": reason ?? "",
                 "Content-Type": "application/json"
             },
@@ -485,7 +592,7 @@ class Client extends EventEmitter {
         const response = await this.rest.fetch(`https://discord.com/api/channels/${channelId}/messages/${messageId}/threads` , {
             method: "POST",
             headers: {
-                Authorization: `Bot ${this.config.token}`,
+                Authorization: `Bot ${this.config.application.token}`,
                 "X-Audit-Log-Reason": reason ?? "",
                 "Content-Type": "application/json"
             },
@@ -502,7 +609,7 @@ class Client extends EventEmitter {
         const response = await this.rest.fetch(`https://discord.com/api/channels/${channelId}`, {
             method: "PATCH",
             headers: {
-                Authorization: `Bot ${this.config.token}`,
+                Authorization: `Bot ${this.config.application.token}`,
                 "X-Audit-Log-Reason": reason ?? "",
                 "Content-Type": "application/json"
             },
@@ -523,7 +630,7 @@ class Client extends EventEmitter {
         const response = await this.rest.fetch(`https://discord.com/api/channels/${channelId}/messages` , {
             method: "POST",
             headers: {
-                Authorization: `Bot ${this.config.token}`,
+                Authorization: `Bot ${this.config.application.token}`,
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
@@ -542,11 +649,10 @@ class Client extends EventEmitter {
     async registerCommands() {
         const commands = Array.from(this.commands.values()).map(x => x.command);
 
-        const log = this.log;
-        const response = await this.rest.fetch(`https://discord.com/api/v10/applications/${this.config.id}/commands`, {
+        const response = await this.rest.fetch(`https://discord.com/api/v10/applications/${this.config.application.id}/commands`, {
             method: "PUT",
             headers: {
-                Authorization: `Bot ${this.config.token}`,
+                Authorization: `Bot ${this.config.application.token}`,
                 "Content-Type": "application/json"
             },
             body: JSON.stringify(commands)
@@ -584,57 +690,6 @@ class Client extends EventEmitter {
 
     toRedCodeBlock(text:string) {
         return `\`\`\`ansi\n\u001b[1;31m${text}\n\`\`\``;
-    };
-
-    async initialize() {
-        if (this.commands_folder) {
-            const commandFiles = readdirSync(this.commands_folder).filter(file => file.endsWith(".js") || file.endsWith(".ts"));
-    
-            for (const path of commandFiles) {
-                try {
-                    const pathname = join(this.commands_folder, path);
-                    const module = await import(pathname);
-                    const command = module.default;
-                    this.commands.set(command.command.data.name, command);
-                } catch (error:any) {
-                    this.log(`Error loading command file \`${path}\`: \`${error}\``, "error");
-                }
-            };
-        }
-
-        if (this.components_folder) {
-            const componentFiles = readdirSync(this.components_folder).filter(file => file.endsWith(".js") || file.endsWith(".ts"));
-    
-            for (const path of componentFiles) {
-                try {
-                    const pathname = join(this.components_folder, path);
-                    const module = await import(pathname);
-                    const component = module.default;
-                    this.components.set(component.custom_id, component);
-                } catch (error:any) {
-                    this.log(`Error loading component file \`${path}\`: \`${error}\``, "error");
-                }
-            };
-        };
-
-        this.registerCommands();
-
-        this.web_server.listen(this.config.port, () => this.log(`Listening at port: ${this.config.port}`, "reload"));
-
-        // await mongoose.connect(this.config.mongodb, { autoIndex: true }).then(() => { this.log("MongoDB Connected!", "reload") });
-        /* @ts-ignore */
-        this.web_server.post("/api/interactions", async(req, res) => {
-            const signature = req.get("X-Signature-Ed25519")!;
-            const timestamp = req.get("X-Signature-Timestamp")!;
-            /* @ts-ignore */
-            const isVerified = nacl.sign.detached.verify(Buffer.from(`${timestamp}${JSON.stringify(req.body)}`), Buffer.from(signature, "hex"), Buffer.from(this.config.public_key, "hex"));
-            if (!isVerified) return res.status(401).end("invalid request signature");
-            if (req.body.type === 1) return res.status(200).send({ type: 1 });
-
-            const interaction = new Interaction(req, res, this);
-            this.emit("interaction", interaction);
-        });
-        return true;
     };
 };
 

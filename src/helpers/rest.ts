@@ -4,6 +4,8 @@ type RouteRateLimit = {
     reset: number;
 }
 
+type FetchOptions = Parameters<typeof fetch>[1];
+
 class REST {
     token: string;
     globalRateLimit: boolean;
@@ -17,7 +19,7 @@ class REST {
         this.routeRateLimits = new Map();
     };
 
-    async fetch(url:string, data:{[x:string]:any}) {
+    async fetch(url:string, data:FetchOptions) {
         if (this.globalRateLimit && Date.now() < this.globalRateLimitReset) {
             const delay = this.globalRateLimitReset - Date.now();
             await new Promise(resolve => setTimeout(resolve, delay));

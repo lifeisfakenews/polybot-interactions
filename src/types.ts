@@ -1,22 +1,29 @@
-import { CommandBuilder, Interaction, Client } from "./utils";
+import type { IncomingMessage } from "http";
+
+import { Client } from "./Client";
+import { CommandBuilder } from "./builders";
+import { CommandInteraction, AutocompleteInteraction, ModalInteraction, ComponentInteraction } from "./helpers/Interaction";
 
 
 /**
  * 			FRAMEWORK TYPES
  */
+export type ExtendedRequest<T = { [key: string]: any }> = IncomingMessage & {
+    body: T;
+}
 
 export type ExportedCommand = {
     visible?: boolean;
     staff_only?: boolean;
     command: CommandBuilder;
-    execute: (client: Client, interaction: Interaction) => Promise<void>;
-    autocomplete?: (client: Client, interaction: Interaction) => Promise<void>;
+    execute: (client: Client, interaction: CommandInteraction) => Promise<void>;
+    autocomplete?: (client: Client, interaction: AutocompleteInteraction) => Promise<void>;
 }
 export type ExportedComponent = {
     custom_id: string;
     type: ExportedComponentTypes;
     staff_only?: boolean;
-    execute: (client: Client, interaction: Interaction) => Promise<void>;
+    execute: (client: Client, interaction: ComponentInteraction) => Promise<void>;
 }
 export enum ExportedComponentTypes {
     "BUTTON" = 1,
@@ -29,6 +36,217 @@ export enum ExportedComponentTypes {
 /**
  * 			DISCORD TYPES
  */
+
+export type InteractionIntegrationOwners = {
+    [T in InteractionIntegrationOwnersTypes]: string
+}
+export enum InteractionIntegrationOwnersTypes {
+    "GUILD_INSTALL" = "0",
+    "USER_INSTALL" = "1"
+}
+export enum InteractionTypes {
+    "PING" = 1,
+    "APPLICATION_COMMAND" = 2,
+    "MESSAGE_COMPONENT" = 3,
+    "AUTOCOMPLETE" = 4,
+    "MODAL_SUBMIT" = 5,
+}
+export enum ResponseTypes {
+    "PONG" = 1,
+    "SEND_MESSAGE" = 4,
+    "SEND_MESSAGE_DEFERRED" = 5,
+    "UPDATE_MESSAGE_DEFERRED" = 6,
+    "UPDATE_MESSAGE" = 7,
+    "AUTOCOMPLETE" = 8,
+    "MODAL" = 9,
+    "PREMIUM_REQUIRED" = 10,
+    "LAUNCH_ACTIVITY" = 12,
+}
+export enum CommandTypes {
+    "CHAT_INPUT" = 1,
+    "USER" = 2,
+    "MESSAGE" = 3,
+    "PRIMARY_ENTRY_POINT" = 4,
+}
+export enum IntegrationTypes {
+    "GUILD_INSTALL" = 0,
+    "USER_INSTALL" = 1
+}
+export enum InteractionContextType {
+    "GUILD" = 0,
+    "BOT_DM" = 1,
+    "PRIVATE_CHANNEL" = 2,
+}
+
+export type CommandAutocompleteChoice = {
+    name: string;
+    value: string;
+}
+
+export enum CommandOptionTypes {
+    "SUB_COMMAND" = 1,
+    "SUB_COMMAND_GROUP" = 2,
+    "STRING" = 3,
+    "INTEGER" = 4,
+    "BOOLEAN" = 5,
+    "USER" = 6,
+    "CHANNEL" = 7,
+    "ROLE" = 8,
+    "MENTIONABLE" = 9,
+    "NUMBER" = 10,
+    "ATTACHMENT" = 11,
+}
+
+export type CommandOptionBase = {
+    name: string;
+    focused?: boolean;
+}
+export type CommandOptionGroup = CommandOptionBase & {
+    type: CommandOptionTypes.SUB_COMMAND_GROUP
+    options: CommandOptionSubcommand[];
+}
+export type CommandOptionSubcommand = CommandOptionBase & {
+    type: CommandOptionTypes.SUB_COMMAND;
+    options: CommandOptionBase & (CommandOptionString[] | CommandOptionNumber[] | CommandOptionBoolean[]);
+}
+export type CommandOptionString = CommandOptionBase & {
+    type: CommandOptionTypes.STRING | CommandOptionTypes.MENTIONABLE | CommandOptionTypes.USER | CommandOptionTypes.CHANNEL | CommandOptionTypes.ROLE | CommandOptionTypes.ATTACHMENT;
+    value: string;
+}
+export type CommandOptionNumber = CommandOptionBase & {
+    type: CommandOptionTypes.INTEGER | CommandOptionTypes.NUMBER;
+    value: number;
+}
+export type CommandOptionBoolean = CommandOptionBase & {
+    type: CommandOptionTypes.BOOLEAN;
+    value: boolean;
+}
+
+export type CommandOption = CommandOptionSubcommand | CommandOptionGroup | CommandOptionString | CommandOptionNumber | CommandOptionBoolean;
+
+export type ModalTextInput = {
+    type: MessageComponentTypes.TEXT_INPUT;
+    custom_id: string;
+    style: ModalTextInputStyles;
+    label: string;
+    min_length?: number;
+    max_length?: number;
+    required?: boolean;
+    value?: string;
+    placeholder?: string;
+}
+export enum ModalTextInputStyles {
+    "SHORT" = 1,
+    "PARAGRAPH" = 2,
+}
+export type ModalActionRow = {
+    type: MessageComponentTypes.ACTION_ROW;
+    components: ModalTextInput[];
+}
+
+export type PartialChannel = {
+    id: string;
+    name: string;
+    type: ChannelTypes;
+    permissions?: string;
+    thread_metadata?: {
+        archived: boolean;
+        auto_archive_duration: number;
+        archive_timestamp: string;
+        locked: boolean;
+        invitable?: boolean;
+    };
+    parent_id?: string;
+}
+export type PartialGuildMember = Omit<GuildMember, "user" | "mute" | "deaf">;
+
+export type InteractionResolvedData = {
+    users?: {[key: string]: User};
+    members?: {[key: string]: PartialGuildMember};
+    roles?: {[key: string]: GuildRole};
+    channels?: {[key: string]: PartialChannel};
+    messages?: {[key: string]: Message};
+    attachments?: {[key: string]: MessageAttachment};
+}
+
+export type InteractionDataCommand = {
+    id: string;
+    name: string;
+    type: CommandTypes;
+    resolved?: InteractionResolvedData;
+    options: CommandOption[];
+    guild_id?: string;
+    target_id?: string;
+}
+export type InteractionDataComponent = {
+    custom_id: string;
+    component_type: MessageComponentTypes;
+    values: string[];
+    resolved?: InteractionResolvedData;
+}
+export type InteractionDataModal = {
+    custom_id: string;
+    components: ModalActionRow[];
+}
+
+type InteractionBodyDM = {
+    context: InteractionContextType.BOT_DM | InteractionContextType.PRIVATE_CHANNEL;
+
+    user: User;
+}
+type InteractionBodyGuild = {
+    context: InteractionContextType.GUILD;
+    guild: {
+        features: GuildFeatures[];
+        id: string;
+        locale: string;
+    };
+    guild_id: string;
+    guild_locale: string;
+
+    member: GuildMember;
+}
+
+type InteractionBodyBase = (InteractionBodyDM | InteractionBodyGuild) & {
+    app_permissions: string;
+    application_id: string;
+    attachment_size_limit: number;
+    authorizing_integration_owners: InteractionIntegrationOwners;
+    channel: {
+        flags: number;
+        guild_id: string;
+        id: string;
+        last_message_id: string;
+        name: string;
+        nsfw: boolean;
+        parent_id: string;
+        permissions: string;
+        position: number;
+        rate_limit_per_user: number;
+        topic: string | null;
+        type: number;
+    };
+    channel_id: string;
+    context: InteractionContextType;
+    id: string;
+    locale: string;
+    message: Message;
+    token: string;
+    // type: InteractionTypes;
+    version: number;
+}
+
+export type InteractionBodyPing = { type: InteractionTypes.PING; };
+export type InteractionBodyCommand = InteractionBodyBase & { type: InteractionTypes.APPLICATION_COMMAND; data: InteractionDataCommand };
+export type InteractionBodyAutocomplete = InteractionBodyBase & { type: InteractionTypes.AUTOCOMPLETE; data: InteractionDataCommand };
+export type InteractionBodyComponent = InteractionBodyBase & { type: InteractionTypes.MESSAGE_COMPONENT; data: InteractionDataComponent };
+export type InteractionBodyModal = InteractionBodyBase & { type: InteractionTypes.MODAL_SUBMIT; data: InteractionDataModal };
+
+export type InteractionBody = InteractionBodyCommand | InteractionBodyAutocomplete | InteractionBodyComponent | InteractionBodyModal;
+export type InteractionBodyWithPing = InteractionBodyPing | InteractionBody;
+
+export type Interaction = CommandInteraction | AutocompleteInteraction | ModalInteraction | ComponentInteraction;
+
 export type Guild = {
     id: string;
     name: string;
@@ -134,7 +352,7 @@ export type GuildRole = {
     tags?: GuildRoleTags;
     flags: GuildRoleFlags[];
 }
-export type GuildRoleTags = {
+type GuildRoleTags = {
     bot_id?: string;
     integration_id?: string;
     premium_subscriber?: null;
@@ -155,17 +373,17 @@ export type GuildEmoji = {
     animated?: boolean;
     available?: boolean;
 }
-export type GuildWelcomeScreen = {
+type GuildWelcomeScreen = {
     description: string | null;
     welcome_channels: GuildWelcomeScreenChannel[];
 }
-export type GuildWelcomeScreenChannel = {
+type GuildWelcomeScreenChannel = {
     channel_id: string;
     description: string;
     emoji_id: string | null;
     emoji_name: string | null;
 }
-export type GuildIncidentsData = {
+type GuildIncidentsData = {
 	invites_disabled_until: string | null;
 	dms_disabled_until: string | null;
 	dm_spam_detected_at: string | null;
@@ -278,14 +496,14 @@ export enum ChannelTypes {
     "GUILD_MEDIA" = 19,
 
 }
-export type ChannelTag = {
+type ChannelTag = {
     id: string;
     name: string;
     moderated: boolean;
     emoji_id: string | null;
     emoji_name: string | null;
 }
-export type ChannelDefaultReaction = {
+type ChannelDefaultReaction = {
     emoji_id: string | null;
     emoji_name: string | null;
 }
@@ -375,11 +593,11 @@ export enum MessageComponentTypes {
     "MENTIONABLE_SELECT" = 7,
     "CHANNEL_SELECT" = 8,
 }
-export type MessageComponent = {
+type MessageComponent = {
     type: MessageComponentTypes.ACTION_ROW;
     components: MessageComponentActionRow[];
 }
-export type MessageComponentActionRow = MessageComponentButton | MessageComponentSelect;
+type MessageComponentActionRow = MessageComponentButton | MessageComponentSelect;
 
 export type MessageComponentEmoji = {
 	id?: string;
@@ -387,18 +605,18 @@ export type MessageComponentEmoji = {
 	animated?: boolean;
 }
 
-export type MessageComponentButton = (MessageComponentButtonWithCustomId | MessageComponentButtonWithURL) & {
+type MessageComponentButton = (MessageComponentButtonWithCustomId | MessageComponentButtonWithURL) & {
     type: MessageComponentTypes.BUTTON,
     label?: string;
 	style: MessageComponentButtonStyles;
 	emoji?: MessageComponentEmoji;
 	disabled?: boolean;
 }
-export type MessageComponentButtonWithCustomId = {
+type MessageComponentButtonWithCustomId = {
     style: MessageComponentButtonStyles.PRIMARY | MessageComponentButtonStyles.SECONDARY | MessageComponentButtonStyles.SUCCESS | MessageComponentButtonStyles.DANGER;
 	custom_id: string;
 }
-export type MessageComponentButtonWithURL = {
+type MessageComponentButtonWithURL = {
     style: MessageComponentButtonStyles.LINK;
 	url: string;
 }
@@ -409,7 +627,7 @@ export enum MessageComponentButtonStyles {
 	DANGER,
 	LINK,
 }
-export type MessageComponentSelect = (MessageComponentStringSelect | MessageComponentAutoPopulatedSelect) & {
+type MessageComponentSelect = (MessageComponentStringSelect | MessageComponentAutoPopulatedSelect) & {
     type: MessageComponentTypes.STRING_SELECT | MessageComponentTypes.CHANNEL_SELECT | MessageComponentTypes.MENTIONABLE_SELECT | MessageComponentTypes.ROLE_SELECT | MessageComponentTypes.USER_SELECT;
     custom_id: string;
     placeholder?: string;
@@ -417,27 +635,27 @@ export type MessageComponentSelect = (MessageComponentStringSelect | MessageComp
     max_values?: number;
     disabled?: boolean;
 }
-export type MessageComponentAutoPopulatedSelect = MessageComponentChannelSelect | {
+type MessageComponentAutoPopulatedSelect = MessageComponentChannelSelect | {
     type: MessageComponentTypes.MENTIONABLE_SELECT | MessageComponentTypes.ROLE_SELECT | MessageComponentTypes.USER_SELECT;
     default_values?: MessageComponentSelectDefaultValue[];
 }
-export type MessageComponentChannelSelect = {
+type MessageComponentChannelSelect = {
     type: MessageComponentTypes.CHANNEL_SELECT;
     default_values?: MessageComponentSelectDefaultValue[];
     channel_types?: ChannelTypes[];
 }
-export type MessageComponentStringSelect = {
+type MessageComponentStringSelect = {
     type: MessageComponentTypes.STRING_SELECT;
     options: MessageComponentSelectOption[];
 }
-export type MessageComponentSelectOption = {
+type MessageComponentSelectOption = {
 	label: string;
 	value: string;
 	description?: string;
 	emoji?: MessageComponentEmoji;
 	default?: boolean;
 }
-export type MessageComponentSelectDefaultValue = {
+type MessageComponentSelectDefaultValue = {
     type: MessageComponentSelectDefaultValueType;
     id: string;
 }
@@ -447,7 +665,7 @@ export enum MessageComponentSelectDefaultValueType {
     "USER" = "user",
 }
 
-export type MessageActivity = {
+type MessageActivity = {
     type: MessageActivityTypes;
     party_id?: string;
 }
@@ -471,44 +689,30 @@ export enum MessageFlags {
     "IS_VOICE_MESSAGE" = 1 << 13,
     "HAS_SNAPSHOT" = 1 << 14,
 }
-export type MessageInteractionMetadata = (MessageComponentInteractionMetadata | MessageCommandInteractionMetadata | MessageModalSubmitInteractionMetadata) & {
+type MessageInteractionMetadata = (MessageComponentInteractionMetadata | MessageCommandInteractionMetadata | MessageModalSubmitInteractionMetadata) & {
     id: string;
     user: User;
-    authorizing_integration_owners: MessageInteractionIntegrationOwners;
+    authorizing_integration_owners: InteractionIntegrationOwners;
     original_response_mnessage_id?: string;
 } 
-export type MessageComponentInteractionMetadata = {
-    type: MessageInteractionTypes.MESSAGE_COMPONENT;
+type MessageComponentInteractionMetadata = {
+    type: InteractionTypes.MESSAGE_COMPONENT;
     interacted_message_id: string;
 }
-export type MessageCommandInteractionMetadata = {
-    type: MessageInteractionTypes.APPLICATION_COMMAND;
+type MessageCommandInteractionMetadata = {
+    type: InteractionTypes.APPLICATION_COMMAND;
     target_message_id?: string;
     target_user?: User;
 }
-export type MessageModalSubmitInteractionMetadata = {
-    type: MessageInteractionTypes.MODAL_SUBMIT;
+type MessageModalSubmitInteractionMetadata = {
+    type: InteractionTypes.MODAL_SUBMIT;
     triggering_interaction_metadata: MessageComponentInteractionMetadata | MessageCommandInteractionMetadata;
 }
-export type MessageInteractionIntegrationOwners = {
-    [T in MessageInteractionIntegrationOwnersTypes]: string
-}
-export enum MessageInteractionIntegrationOwnersTypes {
-    "GUILD_INSTALL" = "0",
-    "USER_INSTALL" = "1"
-}
-export enum MessageInteractionTypes {
-    "PING" = 1,
-    "APPLICATION_COMMAND" = 2,
-    "MESSAGE_COMPONENT" = 3,
-    "APPLICATION_COMMAND_AUTOCOMPLETE_RESULT" = 4,
-    "MODAL_SUBMIT" = 5,
-}
-export type MessageCall = {
+type MessageCall = {
     participants: string[];
     ended_timestamp?: string | null;
 }
-export type MessageReference = {
+type MessageReference = {
     type: MessageReferenceTypes;
     message_id?: string;
     channel_id?: string;
@@ -519,7 +723,7 @@ export enum MessageReferenceTypes {
     "DEFAULT" = 0,
     "FORWARD" = 1,
 }
-export type MessageReaction = {
+type MessageReaction = {
     count: number;
     count_details: {
         burst: number;
@@ -530,7 +734,7 @@ export type MessageReaction = {
     emoji: Emoji;
     burst_colors: string[];
 }
-export type MessageEmbed = MessageEmbedPoll & {
+type MessageEmbed = MessageEmbedPoll & {
     title?: string;
     type?: MessageEmbedTypes;
     description?: string;
@@ -554,34 +758,34 @@ export enum MessageEmbedTypes {
     "LINK" = "link",
     "POLL_RESULT" = "poll_result",
 }
-export type MessageEmbedFooter = {
+type MessageEmbedFooter = {
     text: string;
     icon_url?: string;
 }
-export type MessageEmbedImage = {
+type MessageEmbedImage = {
     url: string;
 }
-export type MessageEmbedThumbnail = {
+type MessageEmbedThumbnail = {
     url: string;
 }
-export type MessageEmbedVideo = {
+type MessageEmbedVideo = {
     url: string;
 }
-export type MessageEmbedProvider = {
+type MessageEmbedProvider = {
     name: string;
     url?: string;
 }
-export type MessageEmbedAuthor = {
+type MessageEmbedAuthor = {
     name: string;
     url?: string;
     icon_url?: string;
 }
-export type MessageEmbedField = {
+type MessageEmbedField = {
     name: string;
     value: string;
     inline?: boolean;
 }
-export type MessageEmbedPoll = {
+type MessageEmbedPoll = {
     type: MessageEmbedTypes.POLL_RESULT;
     poll_question_text: string;
     victor_answer_votes: number;
@@ -611,25 +815,25 @@ export type MessageAttachment = {
 export enum MessageAttachmentFlags {
     "IS_REMIX" = 1 << 2.
 }
-export type MessageChannelMention = {
+type MessageChannelMention = {
     id: string;
     guild_id: string;
     type: ChannelTypes;
     name: string;
 }
-export type MessageAllowedMentions = {
+type MessageAllowedMentions = {
     parse?: string[];
     roles?: string[];
     users?: string[];
     replied_user?: boolean;
 }
-export type MessageRoleSubscriptionData = {
+type MessageRoleSubscriptionData = {
     role_subscription_listing_id: string;
     tier_name: string;
     total_months_subscribed: number;
     is_renewal: boolean;
 }
-export type MessageResolved = {
+type MessageResolved = {
     users?: Map<string, User>;
     members?: Map<string, GuildMember>;
     roles?: Map<string, GuildRole>;
@@ -660,19 +864,19 @@ export type Poll = {
 export enum PollLayoutType {
     "DEFAULT" = 1,
 }
-export type PollAnswer = {
+type PollAnswer = {
     answer_id: string;
     poll_media: PollMedia;
 }
-export type PollMedia = {
+type PollMedia = {
     text: string;
     emoji?: Emoji;
 }
-export type PollResults = {
+type PollResults = {
     is_finalized: boolean;
     answer_counts: PollAnswerCount[];
 }
-export type PollAnswerCount = {
+type PollAnswerCount = {
     id: string;
     count: number;
     me_voted: boolean;
@@ -726,10 +930,17 @@ export type User = {
 	premium_type?: UserPremiumType;
 	public_flags?: number;
 	avatar_decoration_data?: UserAvatarDecorationData | null;
+    primary_guild?: UserPrimaryGuild | null;
 }
-export type UserAvatarDecorationData = {
+type UserAvatarDecorationData = {
 	asset: string;
 	sku_id: string;
+}
+type UserPrimaryGuild = {
+    identity_guild_id: string;
+    identity_enabled: boolean;
+    tag: string;
+    badge: string;
 }
 export enum UserFlags {
 	"STAFF" = 1 << 0,

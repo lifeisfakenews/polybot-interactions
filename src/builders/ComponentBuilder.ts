@@ -1,4 +1,4 @@
-import type { ChannelTypes, MessageComponentEmoji } from "../types";
+import type { ChannelTypes, MessageComponentEmoji } from "./types";
 
 
 export type RowData = {

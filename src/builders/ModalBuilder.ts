@@ -1,8 +1,10 @@
+import { ModalTextInputStyles, MessageComponentTypes } from "./types";
+
 export type ModalData = {
     title?: string;
     custom_id?: string;
     components: {
-        type: 1;
+        type: MessageComponentTypes.ACTION_ROW;
         components: [TextInputData];
     }[];
 }
@@ -38,19 +40,13 @@ class ModalBuilder {
     };
 }
 
-export enum TextInputStyles {
-    "SHORT" = 1,
-    "PARAGRAPH" = 2,
-    "LONG" = 3,
-}
-
 export type TextInputData = {
-    type: 4;
+    type: MessageComponentTypes.TEXT_INPUT;
     label?: string;
     required?: boolean;
     custom_id?: string;
     placeholder?: string;
-    style?: TextInputStyles;
+    style?: ModalTextInputStyles;
     min_length?: number;
     max_length?: number;
     value?: string;
@@ -59,8 +55,8 @@ export type TextInputData = {
 class TextInputBuilder {
     data: TextInputData;
 
-    constructor(input?:TextInputData|string|TextInputStyles) {
-        this.data = typeof input == "string" ? {custom_id: input, type: 4, style: TextInputStyles.SHORT} : typeof input == "number" ? {type: 4, style: input} : input ?? {type: 4, style: TextInputStyles.SHORT};
+    constructor(input?:TextInputData|string|ModalTextInputStyles) {
+        this.data = typeof input == "string" ? {custom_id: input, type: 4, style: ModalTextInputStyles.SHORT} : typeof input == "number" ? {type: 4, style: input} : input ?? {type: 4, style: ModalTextInputStyles.SHORT};
     };
     setLabel(title:string) {
         this.data.label = title;
@@ -78,7 +74,7 @@ class TextInputBuilder {
         this.data.placeholder = placeholder;
         return this;
     };
-    setStyle(style:TextInputStyles) {
+    setStyle(style:ModalTextInputStyles) {
         this.data.style = style;
         return this;
     };
