@@ -133,6 +133,7 @@ export function attachResponseHelpers(res2: ServerResponse) {
             res.statusCode = 200;
             res.setHeader("Content-Length", stats.size);
             res.setHeader("Content-Disposition", `inline; filename="${basename(filePath)}"`);
+            res.setHeader("Content-Type", getMimeType(filePath));
             const stream = createReadStream(filePath);
             stream.pipe(res);
             stream.on("error", () => {
