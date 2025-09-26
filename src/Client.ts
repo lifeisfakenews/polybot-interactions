@@ -165,7 +165,7 @@ class Client extends EventEmitter {
 
             const params = matchRoute(pattern, (req.url || "").split("?")[0]);
             if (params !== false) {
-                return await handler(await attachRequestHelpers(req), attachResponseHelpers(res));
+                return await handler(await attachRequestHelpers(req, params), attachResponseHelpers(res));
             }
         }
         
