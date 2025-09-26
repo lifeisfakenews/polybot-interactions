@@ -5,7 +5,7 @@ import { join } from "path";
 import http, { IncomingMessage, ServerResponse } from "http";
 
 import { RowBuilder, SelectBuilder, EmbedBuilder } from ".";
-import { readJsonBody, sendJson, sendText, serveStatic, attachResponseHelpers, type ExpressLikeResponse, attachRequestHelpers, type ExpressLikeRequest } from "./helpers/http";
+import { readJsonBody, sendJson, sendText, serveStatic, attachResponseHelpers, type ExpressLikeResponse, attachRequestHelpers, type ExpressLikeRequest, matchRoute } from "./helpers/http";
 
 import * as types from "./types";
 
@@ -156,12 +156,21 @@ class Client extends EventEmitter {
                 await this.dispatchInteraction(interaction);
             };
             return;
-        } else if (req.method && this.routes.has(`${req.method.toLowerCase()}__${req.url}`)) {
-            const handler = this.routes.get(`${req.method.toLowerCase()}__${req.url}`)!;
-            return await handler(await attachRequestHelpers(req), attachResponseHelpers(res));
-        } else if ((req.method === "GET" || req.method === "HEAD") && this.config.web_server.publicDir) {
-            return serveStatic(this.config.web_server.publicDir, req, res);
         };
+        if (!req.method) return;
+
+        for (const [key, handler] of this.routes.entries()) {
+            const [method, pattern] = key.split("__");
+            if (method !== req.method.toLowerCase()) continue;
+
+            const params = matchRoute(pattern, (req.url || "").split("?")[0]);
+            if (params !== false) {
+                return await handler(await attachRequestHelpers(req), attachResponseHelpers(res));
+            }
+        }
+        
+        if ((req.method === "GET" || req.method === "HEAD") && this.config.web_server.publicDir) return serveStatic(this.config.web_server.publicDir, req, res);
+
         return sendText(res, 404, "Not Found");
     };
 

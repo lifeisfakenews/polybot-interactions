@@ -28,6 +28,7 @@ export type ExpressLikeRequest = IncomingMessage & {
     cookies: Record<string, string>;
     query: Record<string, string | string[] | undefined>;
     body: any;
+    params: Record<string, string>;
 };
 
 export function readRawBody(req: IncomingMessage): Promise<Buffer> {
@@ -191,8 +192,10 @@ export function attachResponseHelpers(res2: ServerResponse) {
     return res;
 }
 
-export async function attachRequestHelpers(req2: IncomingMessage) {
+export async function attachRequestHelpers(req2: IncomingMessage, params: Record<string, string> = {}) {
     let req: ExpressLikeRequest = req2 as any;
+
+    req.params = params;
 
     req.cookies = {};
     const cookieHeader = req.headers["cookie"];
@@ -232,6 +235,25 @@ export async function attachRequestHelpers(req2: IncomingMessage) {
     }
 
     return req;
+};
+
+export function matchRoute(pattern: string, path: string) {
+    const patternParts = pattern.split("/").filter(Boolean);
+    const pathParts = path.split("/").filter(Boolean);
+
+    if (patternParts.length !== pathParts.length) return false;
+
+    const params: Record<string, string> = {};
+    for (let i = 0; i < patternParts.length; i++) {
+        const p = patternParts[i];
+        const v = pathParts[i];
+        if (p.startsWith(":")) {
+            params[p.slice(1)] = decodeURIComponent(v);
+        } else if (p !== v) {
+            return false;
+        }
+    }
+    return params;
 }
 
 function getMimeType(file: string): string {
