@@ -31,5 +31,7 @@
   },
   "peerDependencies": {
     "typescript": "^5.9.2"
-  }
+  },
+
+  "repository": "git@github.com:lifeisfakenws/polybot-interactions.git"
 }
