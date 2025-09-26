@@ -188,7 +188,7 @@ class Client extends EventEmitter {
                 await command.execute(this, interaction);
             } catch (e:any) {
                 const error_id = this.generateSnowflake();
-                this.log(`## Command Error\nID: \`${error_id}\`\nCommand: ${interaction.command_name} ${interaction.options && interaction.options.subcommand ? `${interaction.options.group ?? ""} ${interaction.options.subcommand}` : ""}\nUser: ${interaction.user.username} (\`${interaction.user.id}\`)\nOptions: ${interaction.options.toArray().map(x => `- ${x.name}: \`${x.value}\``)}\nError:\n\`\`\`${e.toString()}\`\`\``, "error");
+                this.log(`## Command Error\nID: \`${error_id}\`\nCommand: ${interaction.command_name} ${interaction.options && interaction.options.subcommand ? `${interaction.options.group ?? ""} ${interaction.options.subcommand}` : ""}\nUser: ${interaction.user.username} (\`${interaction.user.id}\`)\nOptions: ${interaction.options.toArray().map(x => `- ${x.name}: \`${x.value}\``)}\nError:\n\`\`\`${e.toString()}\`\`\`${e.stack ? `\n\`\`\`\n${e.stack}\n\`\`\`` : ""}`, "error");
                 await interaction.reply({ content: `There was an error while executing this command!\n${this.toRedCodeBlock(e.toString())}\nError ID: \`${error_id}\`` }, true);
             };
         } else if (interaction.type === types.InteractionTypes.AUTOCOMPLETE) {
@@ -198,7 +198,7 @@ class Client extends EventEmitter {
                 await command.autocomplete(this, interaction);
             } catch (e:any) {
                 const error_id = this.generateSnowflake();
-                this.log(`## Autocomplete Error\nID: \`${error_id}\`\nCommand: ${interaction.command_name} ${interaction.options && interaction.options.subcommand ? `${interaction.options.group ?? ""} ${interaction.options.subcommand}` : ""}\nUser: ${interaction.user.username} (\`${interaction.user.id}\`)\nOptions: ${interaction.options.toArray().map(x => `- ${x.name}: \`${x.value}\``)}\nError:\n\`\`\`${e.toString()}\`\`\``, "error");
+                this.log(`## Autocomplete Error\nID: \`${error_id}\`\nCommand: ${interaction.command_name} ${interaction.options && interaction.options.subcommand ? `${interaction.options.group ?? ""} ${interaction.options.subcommand}` : ""}\nUser: ${interaction.user.username} (\`${interaction.user.id}\`)\nOptions: ${interaction.options.toArray().map(x => `- ${x.name}: \`${x.value}\``)}\nError:\n\`\`\`${e.toString()}\`\`\`${e.stack ? `\n\`\`\`\n${e.stack}\n\`\`\`` : ""}`, "error");
                 await interaction.autocomplete([{ name: `An error occurred while fetching values. ID ${error_id}`, value: `__error__${error_id}` }]);
             };
         } else if (interaction.type === types.InteractionTypes.MESSAGE_COMPONENT) {
@@ -212,7 +212,7 @@ class Client extends EventEmitter {
                 await component.execute(this, interaction);
             } catch (e:any) {
                 const error_id = this.generateSnowflake();
-                this.log(`## Component Error\nID: \`${error_id}\`\Custom ID: ${interaction.custom_id}\nUser: ${interaction.user.username} (\`${interaction.user.id}\`)\nOptions: ${interaction.options.toArray().map(x => `- ${x.name}: \`${x.value}\``)}\nError:\n\`\`\`${e.toString()}\`\`\``, "error");
+                this.log(`## Component Error\nID: \`${error_id}\`\Custom ID: ${interaction.custom_id}\nUser: ${interaction.user.username} (\`${interaction.user.id}\`)\nOptions: ${interaction.options.toArray().map(x => `- ${x.name}: \`${x.value}\``)}\nError:\n\`\`\`${e.toString()}\`\`\`${e.stack ? `\n\`\`\`\n${e.stack}\n\`\`\`` : ""}`, "error");
                 await interaction.reply({ content: `There was an error while executing this command!\n${this.toRedCodeBlock(e.toString())}\nError ID: \`${error_id}\`` }, true);
             };
         };
