@@ -212,7 +212,7 @@ class Client extends EventEmitter {
                 await component.execute(this, interaction);
             } catch (e:any) {
                 const error_id = this.generateSnowflake();
-                this.log(`## Component Error\nID: \`${error_id}\`\Custom ID: ${interaction.custom_id}\nUser: ${interaction.user.username} (\`${interaction.user.id}\`)\nOptions: ${interaction.options.toArray().map(x => `- ${x.name}: \`${x.value}\``)}\nError:\n\`\`\`${e.toString()}\`\`\`${e.stack ? `\n\`\`\`\n${e.stack}\n\`\`\`` : ""}`, "error");
+                this.log(`## Component Error\nID: \`${error_id}\`\nCustom ID: ${interaction.custom_id}\nUser: ${interaction.user.username} (\`${interaction.user.id}\`)\nOptions: ${interaction.options.toArray().map(x => `- ${x.name}: \`${x.value}\``)}\nError:\n\`\`\`${e.toString()}\`\`\`${e.stack ? `\n\`\`\`\n${e.stack}\n\`\`\`` : ""}`, "error");
                 await interaction.reply({ content: `There was an error while executing this command!\n${this.toRedCodeBlock(e.toString())}\nError ID: \`${error_id}\`` }, true);
             };
         };
@@ -288,8 +288,8 @@ class Client extends EventEmitter {
                 Authorization: `Bot ${this.config.application.token}`,
                 "Content-Type": "application/json"
             }
-        }).catch(e => log(e, "error"));
-        if (response && !response.ok) {this.log(`Discord API Request failed ${response.status}, getUser\n${await response.text()}`, "error");this.log(response, "error")};
+        }).catch(e => console.log(e));
+        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, getUser\n${await response.text()}`, "error");this.log(response, "error")};
         if (!response || !response.ok) return null;
         const userData = await response.json() as types.User;
         this.users.set(userId, userData);
@@ -307,9 +307,9 @@ class Client extends EventEmitter {
                 Authorization: `Bot ${this.config.application.token}`,
                 "Content-Type": "application/json"
             }
-        }).catch(e => log(e, "error"));
+        }).catch(e => console.log(e));
 
-        if (response && !response.ok) {this.log(`Discord API Request failed ${response.status}, getGuild\n${await response.text()}`, "error");this.log(response, "error")};
+        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, getGuild\n${await response.text()}`, "error");this.log(response, "error")};
         if (!response || !response.ok) return null;
         const guildData = await response.json() as types.Guild;
         this.guilds.set(guildId, guildData);
@@ -326,8 +326,8 @@ class Client extends EventEmitter {
                     Authorization: `Bot ${this.config.application.token}`,
                     "Content-Type": "application/json"
                 },
-            }).catch(e => log(e, "error"));
-            if (response && !response.ok) {this.log(`Discord API Request failed ${response.status}, getGuilds\n${await response.text()}`, "error");this.log(response, "error")};
+            }).catch(e => console.log(e));
+            if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, getGuilds\n${await response.text()}`, "error");this.log(response, "error")};
             if (!response || !response.ok) continue;
             data = await response.json() as types.Guild[];
             guilds = [...guilds, ...data];
@@ -347,9 +347,9 @@ class Client extends EventEmitter {
                 Authorization: `Bot ${this.config.application.token}`,
                 "Content-Type": "application/json"
             }
-        }).catch(e => log(e, "error"));
+        }).catch(e => console.log(e));
 
-        if (response && !response.ok) {this.log(`Discord API Request failed ${response.status}, getMember\n${await response.text()}`, "error");this.log(response, "error")};
+        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, getMember\n${await response.text()}`, "error");this.log(response, "error")};
         if (!response || !response.ok) return null;
         const userData = await response.json() as types.GuildMember;
         this.members.set(`${guildId}_${userId}`, userData);
@@ -365,8 +365,8 @@ class Client extends EventEmitter {
                     Authorization: `Bot ${this.config.application.token}`,
                     "Content-Type": "application/json"
                 },
-            }).catch(e => log(e, "error"));
-            if (response && !response.ok) {this.log(`Discord API Request failed ${response.status}, getMembers\n${await response.text()}`, "error");this.log(response, "error")};
+            }).catch(e => console.log(e));
+            if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, getMembers\n${await response.text()}`, "error");this.log(response, "error")};
             if (!response || !response.ok) continue;
             data = await response.json() as types.GuildMember[];
             members = [...members, ...data];
@@ -384,9 +384,9 @@ class Client extends EventEmitter {
                 Authorization: `Bot ${this.config.application.token}`,
                 "Content-Type": "application/json"
             }
-        }).catch(e => log(e, "error"));
+        }).catch(e => console.log(e));
 
-        if (response && !response.ok) {this.log(`Discord API Request failed ${response.status}, getRoles\n${await response.text()}`, "error");this.log(response, "error")};
+        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, getRoles\n${await response.text()}`, "error");this.log(response, "error")};
         if (!response || !response.ok) return null;
         return await response.json() as types.GuildRole[];
     };
@@ -406,9 +406,9 @@ class Client extends EventEmitter {
                 mentionable: mentionable,
                 permissions: permissions,
             })
-        }).catch(e => log(e, "error"));
+        }).catch(e => console.log(e));
 
-        if (response && !response.ok) {this.log(`Discord API Request failed ${response.status}, createRole\n${await response.text()}`, "error");this.log(response, "error")};
+        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, createRole\n${await response.text()}`, "error");this.log(response, "error")};
         if (!response || !response.ok) return null;
         return await response.json() as types.GuildRole;
     };
@@ -428,9 +428,9 @@ class Client extends EventEmitter {
                 mentionable: mentionable,
                 permissions: permissions,
             })
-        }).catch(e => log(e, "error"));
+        }).catch(e => console.log(e));
 
-        if (response && !response.ok) {this.log(`Discord API Request failed ${response.status}, createRole\n${await response.text()}`, "error");this.log(response, "error")};
+        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, createRole\n${await response.text()}`, "error");this.log(response, "error")};
         if (!response || !response.ok) return null;
         return await response.json() as types.GuildRole;
     };
@@ -443,9 +443,9 @@ class Client extends EventEmitter {
                 "X-Audit-Log-Reason": reason ?? "",
                 "Content-Type": "application/json"
             },
-        }).catch(e => log(e, "error"));
+        }).catch(e => console.log(e));
 
-        if (response && !response.ok) {this.log(`Discord API Request failed ${response.status}, deleteRole\n${await response.text()}`, "error");this.log(response, "error")};
+        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, deleteRole\n${await response.text()}`, "error");this.log(response, "error")};
         if (!response || !response.ok) return null;
         return await response.json() as types.GuildRole;
     };
@@ -458,9 +458,9 @@ class Client extends EventEmitter {
                 "X-Audit-Log-Reason": reason ?? "",
                 "Content-Type": "application/json"
             },
-        }).catch(e => log(e, "error"));
+        }).catch(e => console.log(e));
 
-        if (response && !response.ok) {this.log(`Discord API Request failed ${response.status}, giveRole\n${await response.text()}`, "error");this.log(response, "error")};
+        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, giveRole\n${await response.text()}`, "error");this.log(response, "error")};
         if (!response || !response.ok) return null;
         return await response.json() as types.GuildRole;
     };
@@ -474,9 +474,9 @@ class Client extends EventEmitter {
                 "X-Audit-Log-Reason": reason ?? "",
                 "Content-Type": "application/json"
             },
-        }).catch(e => log(e, "error"));
+        }).catch(e => console.log(e));
 
-        if (response && !response.ok) {this.log(`Discord API Request failed ${response.status}, takeRole\n${await response.text()}`, "error");this.log(response, "error")};
+        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, takeRole\n${await response.text()}`, "error");this.log(response, "error")};
         if (!response || !response.ok) return null;
         return await response.json() as types.GuildRole;
     };
@@ -492,9 +492,9 @@ class Client extends EventEmitter {
                 Authorization: `Bot ${this.config.application.token}`,
                 "Content-Type": "application/json"
             }
-        }).catch(e => log(e, "error"));
+        }).catch(e => console.log(e));
 
-        if (response && !response.ok) {this.log(`Discord API Request failed ${response.status}, getChannel\n${await response.text()}`, "error");this.log(response, "error")};
+        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, getChannel\n${await response.text()}`, "error");this.log(response, "error")};
         if (!response || !response.ok) return null;
         const channelData = await response.json() as types.Channel;
         this.channels.set(channelId, channelData);
@@ -508,9 +508,9 @@ class Client extends EventEmitter {
                 Authorization: `Bot ${this.config.application.token}`,
                 "Content-Type": "application/json"
             }
-        }).catch(e => log(e, "error"));
+        }).catch(e => console.log(e));
 
-        if (response && !response.ok) {this.log(`Discord API Request failed ${response.status}, getChannels\n${await response.text()}`, "error");this.log(response, "error")};
+        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, getChannels\n${await response.text()}`, "error");this.log(response, "error")};
         if (!response || !response.ok) return null;
         return await response.json() as types.Channel[];
     };
@@ -529,8 +529,8 @@ class Client extends EventEmitter {
                 permission_overwrites: permission_overwrites,
                 parent_id: parent_id,
             })
-        }).catch(e => log(e, "error"));
-        if (response && !response.ok) {this.log(`Discord API Request failed ${response.status}, createChannel\n${await response.text()}`, "error");this.log(response, "error")};
+        }).catch(e => console.log(e));
+        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, createChannel\n${await response.text()}`, "error");this.log(response, "error")};
         if (!response || !response.ok) return null;
         return await response.json() as types.Channel;
     };
@@ -548,8 +548,8 @@ class Client extends EventEmitter {
                 permission_overwrites: permission_overwrites,
                 parent_id: parent_id,
             })
-        }).catch(e => log(e, "error"));
-        if (response && !response.ok) {this.log(`Discord API Request failed ${response.status}, updateChannel\n${await response.text()}`, "error");this.log(response, "error")};
+        }).catch(e => console.log(e));
+        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, updateChannel\n${await response.text()}`, "error");this.log(response, "error")};
         if (!response || !response.ok) return null;
         return await response.json() as types.Channel;
     };
@@ -567,8 +567,8 @@ class Client extends EventEmitter {
                 allow: allow,
                 deny: deny,
             })
-        }).catch(e => log(e, "error"));
-        if (response && !response.ok) {this.log(`Discord API Request failed ${response.status}, updateChannelOverwrite\n${await response.text()}`, "error");this.log(response, "error")};
+        }).catch(e => console.log(e));
+        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, updateChannelOverwrite\n${await response.text()}`, "error");this.log(response, "error")};
         if (!response || !response.ok) return null;
         return await response.json() as types.Channel;
     };
@@ -581,8 +581,8 @@ class Client extends EventEmitter {
                 "X-Audit-Log-Reason": reason ?? "",
                 "Content-Type": "application/json"
             },
-        }).catch(e => log(e, "error"));
-        if (response && !response.ok) {this.log(`Discord API Request failed ${response.status}, deleteChannel\n${await response.text()}`, "error");this.log(response, "error")};
+        }).catch(e => console.log(e));
+        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, deleteChannel\n${await response.text()}`, "error");this.log(response, "error")};
         if (!response || !response.ok) return null;
         return await response.json() as types.Channel;
     };
@@ -595,8 +595,8 @@ class Client extends EventEmitter {
                 "X-Audit-Log-Reason": reason ?? "",
                 "Content-Type": "application/json"
             },
-        }).catch(e => log(e, "error"));
-        if (response && !response.ok) {this.log(`Discord API Request failed ${response.status}, deleteChannelOverwrite\n${await response.text()}`, "error");this.log(response, "error")};
+        }).catch(e => console.log(e));
+        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, deleteChannelOverwrite\n${await response.text()}`, "error");this.log(response, "error")};
         if (!response || !response.ok) return null;
         return await response.json() as types.Channel;
     };
@@ -615,8 +615,8 @@ class Client extends EventEmitter {
                 type: type,
                 message: message,
             })
-        }).catch(e => log(e, "error"));
-        if (response && !response.ok) {this.log(`Discord API Request failed ${response.status}, createThread\n${await response.text()}`, "error");this.log(response, "error")};
+        }).catch(e => console.log(e));
+        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, createThread\n${await response.text()}`, "error");this.log(response, "error")};
         if (!response || !response.ok) return null;
         return await response.json() as types.Channel;
     };
@@ -632,8 +632,8 @@ class Client extends EventEmitter {
             body: JSON.stringify({
                 name: name,
             })
-        }).catch(e => log(e, "error"));
-        if (response && !response.ok) {this.log(`Discord API Request failed ${response.status}, createThreadFromMessage\n${await response.text()}`, "error");this.log(response, "error")};
+        }).catch(e => console.log(e));
+        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, createThreadFromMessage\n${await response.text()}`, "error");this.log(response, "error")};
         if (!response || !response.ok) return null;
         return await response.json() as types.Channel;
     };
@@ -652,8 +652,8 @@ class Client extends EventEmitter {
                 locked: locked,
                 applied_tags: applied_tags,
             })
-        }).catch(e => log(e, "error"));
-        if (response && !response.ok) {this.log(`Discord API Request failed ${response.status}, updateThread\n${await response.text()}`, "error");this.log(response, "error")};
+        }).catch(e => console.log(e));
+        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, updateThread\n${await response.text()}`, "error");this.log(response, "error")};
         if (!response || !response.ok) return null;
         return await response.json() as types.Channel;
     };
@@ -673,8 +673,8 @@ class Client extends EventEmitter {
                 components: components?.map(component => component.toJSON()),
                 attachments: attachments?.length ? attachments?.map((file, i) => ({ id: `${i}`, description: file.description })) : null,
             })
-        }).catch(e => log(e, "error"));
-        if (response && !response.ok) {this.log(`Discord API Request failed ${response.status}, sendMessage\n${await response.text()}`, "error");this.log(response, "error")};
+        }).catch(e => console.log(e));
+        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, sendMessage\n${await response.text()}`, "error");this.log(response, "error")};
         if (!response || !response.ok) return null;
         return await response.json() as types.Message;
     };
