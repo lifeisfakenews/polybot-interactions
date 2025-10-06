@@ -235,6 +235,8 @@ class Client extends EventEmitter {
             let content = options?.cb ? `\`\`\`${options.cb}\n${items}\n\`\`\`` : `${items}`;
             content = content.replaceAll("/usr/src/app/node_modules/", "@")
             content = content.replaceAll("    at ", "  ")
+
+            const user = await this.getUser(this.config.application.id).catch(() => null);
             const request = await fetch(this.config.logging.webhook_url, {
                 method: "POST",
                 headers: {
@@ -245,6 +247,7 @@ class Client extends EventEmitter {
                     avatar_url: `https://resources.votemanager.xyz/assets/logs/${options?.type ?? "other"}.png`,
                     embeds: [{
                         color: details.color,
+                        header: user ? { text: `${user.username}#${user.discriminator}`, icon_url: this.getUserAvatar(user.id, user.avatar) } : undefined,
                         description: `${content.length > 2000 ? content.slice(0, 1950) + `\n+${content.length - 1950} more characters` : content}`,
                         footer: options?.footer ? { text: options.footer } : undefined,
                         author: options?.author ? { name: options.author } : undefined,
