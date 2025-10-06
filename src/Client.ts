@@ -247,10 +247,9 @@ class Client extends EventEmitter {
                     avatar_url: `https://resources.votemanager.xyz/assets/logs/${options?.type ?? "other"}.png`,
                     embeds: [{
                         color: details.color,
-                        header: user ? { text: `${user.username}#${user.discriminator}`, icon_url: this.getUserAvatar(user.id, user.avatar) } : undefined,
                         description: `${content.length > 2000 ? content.slice(0, 1950) + `\n+${content.length - 1950} more characters` : content}`,
                         footer: options?.footer ? { text: options.footer } : undefined,
-                        author: options?.author ? { name: options.author } : undefined,
+                        author: options?.author ? { name: options.author } : user ? { text: `${user.username}#${user.discriminator}`, icon_url: this.getUserAvatar(user.id, user.avatar) } : undefined,
                     }]
                 })
             }).catch(this.logToConsole);
