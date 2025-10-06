@@ -657,7 +657,7 @@ class Client extends EventEmitter {
         return await response.json() as types.Channel;
     };
 
-    async createMessage(channelId?:string, content?:string, embeds?:EmbedBuilder[], components?:(SelectBuilder|RowBuilder)[], attachments?:types.MessageAttachment[], tts?:boolean) {
+    async createMessage(channelId:string, content?:string, embeds?:EmbedBuilder[], components?:(SelectBuilder|RowBuilder)[], attachments?:types.MessageAttachment[], tts?:boolean) {
         const log = this.log;
         const response = await this.rest.fetch(`https://discord.com/api/channels/${channelId}/messages` , {
             method: "POST",
@@ -674,6 +674,41 @@ class Client extends EventEmitter {
             })
         }).catch(e => console.log(e));
         if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, sendMessage\n${await response.text()}`, "error");this.log(response, "error")};
+        if (!response || !response.ok) return null;
+        return await response.json() as types.Message;
+    };
+
+    async createDirectMessage(userId:string, content?:string, embeds?:EmbedBuilder[], components?:(SelectBuilder|RowBuilder)[], attachments?:types.MessageAttachment[], tts?:boolean) {
+        const log = this.log;
+        const channel_id_response = await this.rest.fetch(`https://discord.com/api/users/@me/channels` , {
+            method: "POST",
+            headers: {
+                Authorization: `Bot ${this.config.application.token}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                recpient_id: userId,
+            })
+        }).catch(e => console.log(e));
+        if (channel_id_response && !channel_id_response.ok && channel_id_response.status != 404) {this.log(`Discord API Request failed ${channel_id_response.status}, createDirectMessage, getChannelId\n${await channel_id_response.text()}`, "error");this.log(channel_id_response, "error")};
+        if (!channel_id_response || !channel_id_response.ok) return null;
+        const { id } = await channel_id_response.json() as { id: string };
+
+        const response = await this.rest.fetch(`https://discord.com/api/channels/${id}/messages` , {
+            method: "POST",
+            headers: {
+                Authorization: `Bot ${this.config.application.token}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                content: content ? content : "",
+                tts: Boolean(tts),
+                embeds: embeds?.map(embed => embed.toJSON()),
+                components: components?.map(component => component.toJSON()),
+                attachments: attachments?.length ? attachments?.map((file, i) => ({ id: `${i}`, description: file.description })) : null,
+            })
+        }).catch(e => console.log(e));
+        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, createDirectMessage, sendMessage\n${await response.text()}`, "error");this.log(response, "error")};
         if (!response || !response.ok) return null;
         return await response.json() as types.Message;
     };
