@@ -687,7 +687,7 @@ class Client extends EventEmitter {
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                recpient_id: userId,
+                recipient_id: userId,
             })
         }).catch(e => console.log(e));
         if (channel_id_response && !channel_id_response.ok && channel_id_response.status != 404) {this.log(`Discord API Request failed ${channel_id_response.status}, createDirectMessage, getChannelId\n${await channel_id_response.text()}`, "error");this.log(channel_id_response, "error")};
