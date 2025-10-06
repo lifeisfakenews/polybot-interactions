@@ -121,7 +121,13 @@ The req and res objects are `IncomingMessage` and `ServerResponse` from the `htt
 
 
 ## License
+
 MIT
 
 ## Contributing
+
 Issues and pull requests are welcome!
+
+## Credits
+
+As mentioned above, this framework is based on the one used by Vote Manager, the original code for which was largely written by [@Yasser-A420](https://github.com/Yasser-A420)
