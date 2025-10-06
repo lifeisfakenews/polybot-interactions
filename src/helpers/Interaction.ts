@@ -99,7 +99,7 @@ class Interaction {
             method: "GET"
         });
         const reply = await result.json().catch(() => null);
-        return reply;
+        return reply as types.Message;
     };
 };
 
