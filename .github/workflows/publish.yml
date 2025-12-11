@@ -16,10 +16,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 20
           registry-url: "https://registry.npmjs.org/"
@@ -32,8 +32,8 @@ jobs:
 
       - name: Publish to npm (beta on develop)
         if: github.ref == 'refs/heads/develop'
-        run: npm publish --tag beta
+        run: npm publish --tag beta --provenance --access public
 
       - name: Publish to npm (latest on tag)
         if: startsWith(github.ref, 'refs/tags/v')
-        run: npm publish --tag latest
+        run: npm publish --tag latest --provenance --access public
