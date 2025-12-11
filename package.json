@@ -2,7 +2,7 @@
   "name": "polybot-interactions",
   "version": "0.0.1-beta.12",
   "type": "module",
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "main": "./dist/cjs/index.cjs",
   "module": "./dist/esm/index.js",
   "types": "./dist/esm/index.d.ts",
