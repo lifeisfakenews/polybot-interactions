@@ -6,6 +6,10 @@ on:
     tags:
       - "v*"             # push a tag vX.Y.Z → release
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
