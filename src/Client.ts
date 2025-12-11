@@ -8,6 +8,10 @@ import { RowBuilder, SelectBuilder, EmbedBuilder } from ".";
 import { readJsonBody, sendJson, sendText, serveStatic, attachResponseHelpers, type ExpressLikeResponse, attachRequestHelpers, type ExpressLikeRequest, matchRoute } from "./helpers/http";
 
 import * as types from "./types";
+import type { 
+    User, Guild, GuildMember, GuildRole, Channel, ChannelOverwrite, ChannelOverwriteTypes, ChannelTypes, Message, MessageAttachment,
+    GuildBan, GuildInvite, AuditLog, Emoji
+} from "./types";
 
 import { CommandInteraction, AutocompleteInteraction, ModalInteraction, ComponentInteraction } from "./helpers/Interaction";
 import { REST } from "./helpers/rest";
@@ -45,10 +49,11 @@ export type Config<T = { [key: string]: any }> = T & {
 type LogTypes = "error" | "reload" | "eval" | "other";
 type LogLevel = "error" | "warn" | "info" | "debug";
 type LogOptions = {
-    cb?: string;
+    codeblock?: string;
     footer?: string;
     author?: string;
     type?: LogTypes;
+    show_full_module_paths?: boolean;
 }
 
 interface ClientEvents {
@@ -70,10 +75,11 @@ class Client extends EventEmitter {
     private rest: REST;
     commands: Map<string, types.Command>;
     components: Map<string, types.Component>;
-    private users: Map<string, types.User>;
-    private guilds: Map<string, types.Guild>;
+    private users: Map<string, User>;
+    private guilds: Map<string, Guild>;
     private channels: Map<string, types.Channel>;
-    private members: Map<string, types.GuildMember>;
+    private members: Map<string, GuildMember>;
+    private snowflake_increment: number;
 
     private routes: Map<string, RouteHandlerCallback>;
 
@@ -92,6 +98,8 @@ class Client extends EventEmitter {
 
         this.web_server = http.createServer((req, res) => this.handleRequest(req, res));
         this.web_server.listen(this.config.web_server.port, () => this.log(`Listening at port: ${this.config.web_server.port}`, "reload"));
+
+        this.snowflake_increment = 0;
     };
 
     async init() {
@@ -231,12 +239,16 @@ class Client extends EventEmitter {
     async log(items:any, options?:LogOptions|LogTypes) {
         if (typeof options == "string") options = {type: options};
         const details = log_formats[options?.type ?? "other"];
-        if (this.config.logging?.webhook_url) {
-            let content = options?.cb ? `\`\`\`${options.cb}\n${items}\n\`\`\`` : `${items}`;
-            content = content.replaceAll("/usr/src/app/node_modules/", "@")
-            content = content.replaceAll("    at ", "  ")
 
-            const user = await this.getUser(this.config.application.id).catch(() => null);
+        this.logToConsole(items, details.level);
+        if (this.config.logging?.webhook_url) {
+            let content = options?.codeblock ? `\`\`\`${options.codeblock}\n${items}\n\`\`\`` : `${items}`;
+            if (!options?.show_full_module_paths) {
+                content = content.replaceAll("/usr/src/app/node_modules/", "%")
+                content = content.replaceAll("    at ", "  ")
+            };
+
+            const user = await this.getUser({ user_id: this.config.application.id }).catch(() => null);
             const request = await fetch(this.config.logging.webhook_url, {
                 method: "POST",
                 headers: {
@@ -260,7 +272,6 @@ class Client extends EventEmitter {
             };
         };
 
-        this.logToConsole(items, details.level);
     };
 
     private logToConsole(content:string, level:LogLevel = "info") {
@@ -277,440 +288,281 @@ class Client extends EventEmitter {
         return `\`\`\`ansi\n\u001b[1;31m${text}\n\`\`\``;
     };
 
-    async getUser(userId:string) {
-        const userCache = this.users.get(userId);
-        if (userCache) return userCache;
-        const log = this.log;
-        const response = await this.rest.fetch(`https://discord.com/api/users/${userId}`, {
-            method: "GET",
-            headers: {
-                Authorization: `Bot ${this.config.application.token}`,
-                "Content-Type": "application/json"
-            }
-        }).catch(e => console.log(e));
-        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, getUser\n${await response.text()}`, "error");this.log(response, "error")};
-        if (!response || !response.ok) return null;
-        const userData = await response.json() as types.User;
-        this.users.set(userId, userData);
-        return userData;
+    private async sendDiscordRequest<T>(method: string, url: string, body?: any, reason?: string) {
+        const logToConsole = this.logToConsole;
+        const headers: Record<string, string> = {
+            Authorization: `Bot ${this.config.application.token}`,
+            "Content-Type": "application/json"
+        };
+        if (reason) {
+            headers["X-Audit-Log-Reason"] = reason;
+        }
+        const response = await this.rest.fetch(`https://discord.com/api/v10/${url}`, {
+            method: method,
+            headers,
+            body: body && method !== "GET" ? JSON.stringify(body) : undefined
+        }).catch(e => {
+            this.log(`Discord API Request threw an error (${method} \`${url}\`)`, "error");
+            console.log(e);
+        });
+
+        const allowed_error_codes = [404];
+        if (!response) return null;
+        if (response.ok) {
+            return await response.json() as T;
+        } else if (allowed_error_codes.includes(response.status)) {
+            this.logToConsole(`Discord API Request failed ${response.status}, \`${url}\`\n${await response.text()}`, "error");
+            return null;
+        } else {
+            const text = await response.json().then(x => JSON.stringify(x, null, 2)).catch(async() => await response.text());
+            this.log(`Discord API Request failed ${response.status}, \`${url}\`\n\`\`\`\n${text}\n\`\`\``, "error");
+            return null;
+        };
     };
 
-    async getGuild(guildId:string) {
-        const guildCache = this.guilds.get(guildId);
-        if (guildCache) return guildCache;
-
-        const log = this.log;
-        const response = await this.rest.fetch(`https://discord.com/api/guilds/${guildId}`, {
-            method: "GET",
-            headers: {
-                Authorization: `Bot ${this.config.application.token}`,
-                "Content-Type": "application/json"
-            }
-        }).catch(e => console.log(e));
-
-        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, getGuild\n${await response.text()}`, "error");this.log(response, "error")};
-        if (!response || !response.ok) return null;
-        const guildData = await response.json() as types.Guild;
-        this.guilds.set(guildId, guildData);
-        return guildData;
+    async getUser({ user_id }: { user_id: string }) {
+        const user_cache = this.users.get(user_id);
+        if (user_cache) return user_cache;
+        const user_data = await this.sendDiscordRequest<User>("GET", `users/${user_id}`);
+        if (!user_data) return null;
+        this.users.set(user_id, user_data);
+        return user_data;
     };
+
+    async getGuild({ guild_id }: { guild_id: string }) {
+        const guild_cache = this.guilds.get(guild_id);
+        if (guild_cache) return guild_cache;
+
+        const guild_data = await this.sendDiscordRequest<Guild>("GET", `guilds/${guild_id}`);
+        if (!guild_data) return null;
+        this.guilds.set(guild_id, guild_data);
+        return guild_data;
+    };
+
     async getGuilds() {
-        let guilds:types.Guild[] = [], first_pass = true, data:types.Guild[] = [];
-
-        const log = this.log;
+        let guilds: Guild[] = [], first_pass = true, data: Guild[] = [];
         while (first_pass || data[199]) {
-            const response = await this.rest.fetch(`https://discord.com/api/users/@me/guilds/${first_pass ? "" : `?after=${data[199].id}`}`, {
-                method: "GET",
-                headers: {
-                    Authorization: `Bot ${this.config.application.token}`,
-                    "Content-Type": "application/json"
-                },
-            }).catch(e => console.log(e));
-            if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, getGuilds\n${await response.text()}`, "error");this.log(response, "error")};
-            if (!response || !response.ok) continue;
-            data = await response.json() as types.Guild[];
+            const request = await this.sendDiscordRequest<Guild[]>("GET", `users/@me/guilds/${first_pass ? "" : `?after=${data[199].id}`}`);
+            if (!request) continue;
+            data = request;
             guilds = [...guilds, ...data];
             first_pass = false;
-        };
-
+        }
         return guilds;
     };
 
-    async getMember(guildId:string, userId:string) {
-        const memberCache = this.members.get(`${guildId}_${userId}`);
-        if (memberCache && userId !== "959699003010871307") return memberCache;
-        const log = this.log;
-        const response = await this.rest.fetch(`https://discord.com/api/guilds/${guildId}/members/${userId}`, {
-            method: "GET",
-            headers: {
-                Authorization: `Bot ${this.config.application.token}`,
-                "Content-Type": "application/json"
-            }
-        }).catch(e => console.log(e));
+    async getMember({ guild_id, user_id }: { guild_id: string, user_id: string }) {
+        const member_cache = this.members.get(`${guild_id}_${user_id}`);
+        if (member_cache) return member_cache;
+        const member_data = await this.sendDiscordRequest<GuildMember>("GET", `guilds/${guild_id}/members/${user_id}`);
+        if (!member_data) return null;
+        this.members.set(`${guild_id}_${user_id}`, member_data);
+        return member_data;
+    };
 
-        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, getMember\n${await response.text()}`, "error");this.log(response, "error")};
-        if (!response || !response.ok) return null;
-        const userData = await response.json() as types.GuildMember;
-        this.members.set(`${guildId}_${userId}`, userData);
-        return userData;
-    }
-    async getMembers(guildId:string) {
-        let members:types.GuildMember[] = [], first_pass = true, data:types.GuildMember[] = [];
-        const log = this.log;
+    async getMembers({ guild_id }: { guild_id: string }) {
+        let members: GuildMember[] = [], first_pass = true, data: GuildMember[] = [];
         while (first_pass || data[199]) {
-            const response = await this.rest.fetch(`https://discord.com/api/guilds/${guildId}/members/${first_pass ? "" : `?after=${data[999].user.id}`}`, {
-                method: "GET",
-                headers: {
-                    Authorization: `Bot ${this.config.application.token}`,
-                    "Content-Type": "application/json"
-                },
-            }).catch(e => console.log(e));
-            if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, getMembers\n${await response.text()}`, "error");this.log(response, "error")};
-            if (!response || !response.ok) continue;
-            data = await response.json() as types.GuildMember[];
+            const request = await this.sendDiscordRequest<GuildMember[]>("GET", `guilds/${guild_id}/members${first_pass ? "" : `?after=${data[199].user.id}`}`);
+            if (!request) continue;
+            data = request;
             members = [...members, ...data];
             first_pass = false;
-            // await sleep(700);
-        };
+        }
         return members;
     };
 
-    async getRoles(guildId:string) {
-        const log = this.log;
-        const response = await this.rest.fetch(`https://discord.com/api/guilds/${guildId}/roles`, {
-            method: "GET",
-            headers: {
-                Authorization: `Bot ${this.config.application.token}`,
-                "Content-Type": "application/json"
-            }
-        }).catch(e => console.log(e));
-
-        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, getRoles\n${await response.text()}`, "error");this.log(response, "error")};
-        if (!response || !response.ok) return null;
-        return await response.json() as types.GuildRole[];
+    async getBans({ guild_id }: { guild_id: string }) {
+        return await this.sendDiscordRequest<GuildBan[]>("GET", `guilds/${guild_id}/bans`);
     };
-    async createRole(name:string, guildId:string, color:number, hoist?:boolean, mentionable?:boolean, permissions?:number, reason?:string) {
-        const log = this.log;
-        const response = await this.rest.fetch(`https://discord.com/api/guilds/${guildId}/roles`, {
-            method: "POST",
-            headers: {
-                Authorization: `Bot ${this.config.application.token}`,
-                "X-Audit-Log-Reason": reason ?? "",
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                name: name,
-                color: color,
-                hoist: hoist,
-                mentionable: mentionable,
-                permissions: permissions,
-            })
-        }).catch(e => console.log(e));
-
-        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, createRole\n${await response.text()}`, "error");this.log(response, "error")};
-        if (!response || !response.ok) return null;
-        return await response.json() as types.GuildRole;
+    async banMember({ guild_id, user_id, delete_message_days, reason }: { guild_id: string, user_id: string, delete_message_days?: number, reason?: string }) {
+        return await this.sendDiscordRequest<void>("PUT", `guilds/${guild_id}/bans/${user_id}`, delete_message_days ? { delete_message_days } : undefined, reason);
     };
-    async updateRole(roleId:string, guildId:string, name?:string, color?:number, hoist?:boolean, mentionable?:boolean, permissions?:number, reason?:string) {
-        const log = this.log;
-        const response = await this.rest.fetch(`https://discord.com/api/guilds/${guildId}/roles${roleId}`, {
-            method: "PATCH",
-            headers: {
-                Authorization: `Bot ${this.config.application.token}`,
-                "X-Audit-Log-Reason": reason ?? "",
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                name: name,
-                color: color,
-                hoist: hoist,
-                mentionable: mentionable,
-                permissions: permissions,
-            })
-        }).catch(e => console.log(e));
-
-        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, createRole\n${await response.text()}`, "error");this.log(response, "error")};
-        if (!response || !response.ok) return null;
-        return await response.json() as types.GuildRole;
-    };
-    async deleteRole(roleId:string, guildId:string, reason?:string) {
-        const log = this.log;
-        const response = await this.rest.fetch(`https://discord.com/api/guilds/${guildId}/roles${roleId}`, {
-            method: "DELETE",
-            headers: {
-                Authorization: `Bot ${this.config.application.token}`,
-                "X-Audit-Log-Reason": reason ?? "",
-                "Content-Type": "application/json"
-            },
-        }).catch(e => console.log(e));
-
-        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, deleteRole\n${await response.text()}`, "error");this.log(response, "error")};
-        if (!response || !response.ok) return null;
-        return await response.json() as types.GuildRole;
-    };
-    async giveRole(roleId:string, guildId:string, memberId:string, reason?:string) {
-        const log = this.log;
-        const response = await this.rest.fetch(`https://discord.com/api/guilds/${guildId}/members/${memberId}/roles/${roleId}`, {
-            method: "PUT",
-            headers: {
-                Authorization: `Bot ${this.config.application.token}`,
-                "X-Audit-Log-Reason": reason ?? "",
-                "Content-Type": "application/json"
-            },
-        }).catch(e => console.log(e));
-
-        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, giveRole\n${await response.text()}`, "error");this.log(response, "error")};
-        if (!response || !response.ok) return null;
-        return await response.json() as types.GuildRole;
+    async unbanMember({ guild_id, user_id, reason }: { guild_id: string, user_id: string, reason?: string }) {
+        return await this.sendDiscordRequest<void>("DELETE", `guilds/${guild_id}/bans/${user_id}`, undefined, reason);
     };
 
-    async takeRole(roleId:string, guildId:string, memberId:string, reason?:string) {
-        const log = this.log;
-        const response = await this.rest.fetch(`https://discord.com/api/guilds/${guildId}/members/${memberId}/roles/${roleId}`, {
-            method: "DELETE",
-            headers: {
-                Authorization: `Bot ${this.config.application.token}`,
-                "X-Audit-Log-Reason": reason ?? "",
-                "Content-Type": "application/json"
-            },
-        }).catch(e => console.log(e));
-
-        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, takeRole\n${await response.text()}`, "error");this.log(response, "error")};
-        if (!response || !response.ok) return null;
-        return await response.json() as types.GuildRole;
+    async getGuildInvites({ guild_id }: { guild_id: string }) {
+        return await this.sendDiscordRequest<GuildInvite[]>("GET", `guilds/${guild_id}/invites`);
+    };
+    async createGuildInvite({ channel_id, max_age, max_uses, temporary, unique, reason }: { channel_id: string, max_age?: number, max_uses?: number, temporary?: boolean, unique?: boolean, reason?: string }) {
+        return await this.sendDiscordRequest<GuildInvite>("POST", `channels/${channel_id}/invites`, { max_age, max_uses, temporary, unique }, reason);
     };
 
-    async getChannel(channelId:string) {
-        const channelCache = this.channels.get(channelId);
+    async getAuditLogs({ guild_id, user_id, action_type, before, limit }: { guild_id: string, user_id?: string, action_type?: number, before?: string, limit?: number }) {
+        const params = [
+            user_id ? `user_id=${user_id}` : "",
+            action_type ? `action_type=${action_type}` : "",
+            before ? `before=${before}` : "",
+            limit ? `limit=${limit}` : ""
+        ].filter(Boolean).join("&");
+        return await this.sendDiscordRequest<AuditLog>("GET", `guilds/${guild_id}/audit-logs${params ? "?" + params : ""}`);
+    };
+
+    async editMember({ guild_id, user_id, ...data }: { guild_id: string, user_id: string, nick?: string, roles?: string[], mute?: boolean, deaf?: boolean, channel_id?: string, communication_disabled_until?: string, reason?: string }) {
+        const { reason, ...body } = data;
+        return await this.sendDiscordRequest<GuildMember>("PATCH", `guilds/${guild_id}/members/${user_id}`, body, reason);
+    };
+    async kickMember({ guild_id, user_id, reason }: { guild_id: string, user_id: string, reason?: string }) {
+        return await this.sendDiscordRequest<void>("DELETE", `guilds/${guild_id}/members/${user_id}`, undefined, reason);
+    };
+    async pruneMembers({ guild_id, days, compute_prune_count, include_roles, reason }: { guild_id: string, days?: number, compute_prune_count?: boolean, include_roles?: string[], reason?: string }) {
+        return await this.sendDiscordRequest<{ pruned: number }>("POST", `guilds/${guild_id}/prune`, { days, compute_prune_count, include_roles }, reason);
+    };
+
+    async getRoles({ guild_id }: { guild_id: string }) {
+        return await this.sendDiscordRequest<GuildRole[]>("GET", `guilds/${guild_id}/roles`);
+    };
+
+    async createRole({ name, guild_id, color, hoist, mentionable, permissions, reason }: { name: string, guild_id: string, color: number, hoist?: boolean, mentionable?: boolean, permissions?: number, reason?: string }) {
+        return await this.sendDiscordRequest<GuildRole>("POST", `guilds/${guild_id}/roles`, {
+            name, color, hoist, mentionable, permissions
+        }, reason);
+    };
+
+    async updateRole({ role_id, guild_id, name, color, hoist, mentionable, permissions, reason }: { role_id: string, guild_id: string, name?: string, color?: number, hoist?: boolean, mentionable?: boolean, permissions?: number, reason?: string }) {
+        return await this.sendDiscordRequest<GuildRole>("PATCH", `guilds/${guild_id}/roles/${role_id}`, {
+            name, color, hoist, mentionable, permissions
+        }, reason);
+    };
+
+    async deleteRole({ role_id, guild_id, reason }: { role_id: string, guild_id: string, reason?: string }) {
+        return await this.sendDiscordRequest<GuildRole>("DELETE", `guilds/${guild_id}/roles/${role_id}`, undefined, reason);
+    };
+
+    async giveMemberRole({ role_id, guild_id, member_id, reason }: { role_id: string, guild_id: string, member_id: string, reason?: string }) {
+        return await this.sendDiscordRequest<GuildRole>("PUT", `guilds/${guild_id}/members/${member_id}/roles/${role_id}`, undefined, reason);
+    };
+
+    async removeMemberRole({ role_id, guild_id, member_id, reason }: { role_id: string, guild_id: string, member_id: string, reason?: string }) {
+        return await this.sendDiscordRequest<GuildRole>("DELETE", `guilds/${guild_id}/members/${member_id}/roles/${role_id}`, undefined, reason);
+    };
+
+
+    async getChannel({ channel_id }: { channel_id: string }) {
+        const channelCache = this.channels.get(channel_id);
         if (channelCache) return channelCache;
-
-        const log = this.log;
-        const response = await this.rest.fetch(`https://discord.com/api/channels/${channelId}`, {
-            method: "GET",
-            headers: {
-                Authorization: `Bot ${this.config.application.token}`,
-                "Content-Type": "application/json"
-            }
-        }).catch(e => console.log(e));
-
-        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, getChannel\n${await response.text()}`, "error");this.log(response, "error")};
-        if (!response || !response.ok) return null;
-        const channelData = await response.json() as types.Channel;
-        this.channels.set(channelId, channelData);
-        return channelData
-    };
-    async getChannels(guildId:string) {
-        const log = this.log;
-        const response = await this.rest.fetch(`https://discord.com/api/guilds/${guildId}/channels`, {
-            method: "GET",
-            headers: {
-                Authorization: `Bot ${this.config.application.token}`,
-                "Content-Type": "application/json"
-            }
-        }).catch(e => console.log(e));
-
-        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, getChannels\n${await response.text()}`, "error");this.log(response, "error")};
-        if (!response || !response.ok) return null;
-        return await response.json() as types.Channel[];
-    };
-    async createChannel(name:string, guildId:string, type:types.ChannelTypes, permission_overwrites?:types.ChannelOverwrite[], parent_id?:string, reason?:string) {
-        const log = this.log;
-        const response = await this.rest.fetch(`https://discord.com/api/guilds/${guildId}/channels`, {
-            method: "POST",
-            headers: {
-                Authorization: `Bot ${this.config.application.token}`,
-                "X-Audit-Log-Reason": reason ?? "",
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                name: name,
-                type: type,
-                permission_overwrites: permission_overwrites,
-                parent_id: parent_id,
-            })
-        }).catch(e => console.log(e));
-        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, createChannel\n${await response.text()}`, "error");this.log(response, "error")};
-        if (!response || !response.ok) return null;
-        return await response.json() as types.Channel;
-    };
-    async updateChannel(channelId:string, name?:string, permission_overwrites?:types.ChannelOverwrite[], parent_id?:string, reason?:string) {
-        const log = this.log;
-        const response = await this.rest.fetch(`https://discord.com/api/channels/${channelId}`, {
-            method: "PATCH",
-            headers: {
-                Authorization: `Bot ${this.config.application.token}`,
-                "X-Audit-Log-Reason": reason ?? "",
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                name: name,
-                permission_overwrites: permission_overwrites,
-                parent_id: parent_id,
-            })
-        }).catch(e => console.log(e));
-        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, updateChannel\n${await response.text()}`, "error");this.log(response, "error")};
-        if (!response || !response.ok) return null;
-        return await response.json() as types.Channel;
-    };
-    async updateChannelOverwrite(channelId:string, overwriteId:string, type:types.ChannelOverwriteTypes, allow?:number|string, deny?:number|string, reason?:string) {
-        const log = this.log;
-        const response = await this.rest.fetch(`https://discord.com/api/channels/${channelId}/permissions/${overwriteId}`, {
-            method: "PUT",
-            headers: {
-                Authorization: `Bot ${this.config.application.token}`,
-                "X-Audit-Log-Reason": reason ?? "",
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                type: type,
-                allow: allow,
-                deny: deny,
-            })
-        }).catch(e => console.log(e));
-        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, updateChannelOverwrite\n${await response.text()}`, "error");this.log(response, "error")};
-        if (!response || !response.ok) return null;
-        return await response.json() as types.Channel;
-    };
-    async deleteChannel(channelId:string, reason?:string) {
-        const log = this.log;
-        const response = await this.rest.fetch(`https://discord.com/api/channels/${channelId}`, {
-            method: "DELETE",
-            headers: {
-                Authorization: `Bot ${this.config.application.token}`,
-                "X-Audit-Log-Reason": reason ?? "",
-                "Content-Type": "application/json"
-            },
-        }).catch(e => console.log(e));
-        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, deleteChannel\n${await response.text()}`, "error");this.log(response, "error")};
-        if (!response || !response.ok) return null;
-        return await response.json() as types.Channel;
-    };
-    async deleteChannelOverwrite(channelId:string, overwriteId:string, reason?:string) {
-        const log = this.log;
-        const response = await this.rest.fetch(`https://discord.com/api/channels/${channelId}/permissions/${overwriteId}`, {
-            method: "DELETE",
-            headers: {
-                Authorization: `Bot ${this.config.application.token}`,
-                "X-Audit-Log-Reason": reason ?? "",
-                "Content-Type": "application/json"
-            },
-        }).catch(e => console.log(e));
-        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, deleteChannelOverwrite\n${await response.text()}`, "error");this.log(response, "error")};
-        if (!response || !response.ok) return null;
-        return await response.json() as types.Channel;
+        const channelData = await this.sendDiscordRequest<Channel>("GET", `channels/${channel_id}`);
+        if (!channelData) return null;
+        this.channels.set(channel_id, channelData);
+        return channelData;
     };
 
-    async createThread(name:string, channelId:string, type:types.ChannelTypes.PRIVATE_THREAD|types.ChannelTypes.PUBLIC_THREAD|types.ChannelTypes.ANNOUNCEMENT_THREAD, message?:MessageBody, reason?:string) {
-        const log = this.log;
-        const response = await this.rest.fetch(`https://discord.com/api/channels/${channelId}/threads`, {
-            method: "POST",
-            headers: {
-                Authorization: `Bot ${this.config.application.token}`,
-                "X-Audit-Log-Reason": reason ?? "",
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                name: name,
-                type: type,
-                message: message,
-            })
-        }).catch(e => console.log(e));
-        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, createThread\n${await response.text()}`, "error");this.log(response, "error")};
-        if (!response || !response.ok) return null;
-        return await response.json() as types.Channel;
-    };
-    async createThreadFromMessage(name:string, channelId:string, messageId:string, reason?:string) {
-        const log = this.log;
-        const response = await this.rest.fetch(`https://discord.com/api/channels/${channelId}/messages/${messageId}/threads` , {
-            method: "POST",
-            headers: {
-                Authorization: `Bot ${this.config.application.token}`,
-                "X-Audit-Log-Reason": reason ?? "",
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                name: name,
-            })
-        }).catch(e => console.log(e));
-        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, createThreadFromMessage\n${await response.text()}`, "error");this.log(response, "error")};
-        if (!response || !response.ok) return null;
-        return await response.json() as types.Channel;
-    };
-    async updateThread(channelId:string, name?:string, archived?:boolean, locked?:boolean, applied_tags?:string[], reason?:string) {
-        const log = this.log;
-        const response = await this.rest.fetch(`https://discord.com/api/channels/${channelId}`, {
-            method: "PATCH",
-            headers: {
-                Authorization: `Bot ${this.config.application.token}`,
-                "X-Audit-Log-Reason": reason ?? "",
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                name: name,
-                archived: archived,
-                locked: locked,
-                applied_tags: applied_tags,
-            })
-        }).catch(e => console.log(e));
-        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, updateThread\n${await response.text()}`, "error");this.log(response, "error")};
-        if (!response || !response.ok) return null;
-        return await response.json() as types.Channel;
+    async getChannels({ guild_id }: { guild_id: string }) {
+        return await this.sendDiscordRequest<Channel[]>("GET", `guilds/${guild_id}/channels`);
     };
 
-    async createMessage(channelId:string, content?:string, embeds?:EmbedBuilder[], components?:(SelectBuilder|RowBuilder)[], attachments?:types.MessageAttachment[], tts?:boolean) {
-        const log = this.log;
-        const response = await this.rest.fetch(`https://discord.com/api/channels/${channelId}/messages` , {
-            method: "POST",
-            headers: {
-                Authorization: `Bot ${this.config.application.token}`,
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                content: content ? content : "",
-                tts: Boolean(tts),
-                embeds: embeds?.map(embed => embed.toJSON()),
-                components: components?.map(component => component.toJSON()),
-                attachments: attachments?.length ? attachments?.map((file, i) => ({ id: `${i}`, description: file.description })) : null,
-            })
-        }).catch(e => console.log(e));
-        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, sendMessage\n${await response.text()}`, "error");this.log(response, "error")};
-        if (!response || !response.ok) return null;
-        return await response.json() as types.Message;
+    async createChannel({ name, guild_id, type, permission_overwrites, parent_id, reason }: { name: string, guild_id: string, type: ChannelTypes, permission_overwrites?: ChannelOverwrite[], parent_id?: string, reason?: string }) {
+        return await this.sendDiscordRequest<Channel>("POST", `guilds/${guild_id}/channels`, {
+            name, type, permission_overwrites, parent_id
+        }, reason);
     };
 
-    async createDirectMessage(userId:string, content?:string, embeds?:EmbedBuilder[], components?:(SelectBuilder|RowBuilder)[], attachments?:types.MessageAttachment[], tts?:boolean) {
-        const log = this.log;
-        const channel_id_response = await this.rest.fetch(`https://discord.com/api/users/@me/channels` , {
-            method: "POST",
-            headers: {
-                Authorization: `Bot ${this.config.application.token}`,
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                recipient_id: userId,
-            })
-        }).catch(e => console.log(e));
-        if (channel_id_response && !channel_id_response.ok && channel_id_response.status != 404) {this.log(`Discord API Request failed ${channel_id_response.status}, createDirectMessage, getChannelId\n${await channel_id_response.text()}`, "error");this.log(channel_id_response, "error")};
-        if (!channel_id_response || !channel_id_response.ok) return null;
-        const { id } = await channel_id_response.json() as { id: string };
+    async updateChannel({ channel_id, name, permission_overwrites, parent_id, reason }: { channel_id: string, name?: string, permission_overwrites?: ChannelOverwrite[], parent_id?: string, reason?: string }) {
+        return await this.sendDiscordRequest<Channel>("PATCH", `channels/${channel_id}`, {
+            name, permission_overwrites, parent_id
+        }, reason);
+    };
 
-        const response = await this.rest.fetch(`https://discord.com/api/channels/${id}/messages` , {
-            method: "POST",
-            headers: {
-                Authorization: `Bot ${this.config.application.token}`,
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                content: content ? content : "",
-                tts: Boolean(tts),
-                embeds: embeds?.map(embed => embed.toJSON()),
-                components: components?.map(component => component.toJSON()),
-                attachments: attachments?.length ? attachments?.map((file, i) => ({ id: `${i}`, description: file.description })) : null,
-            })
-        }).catch(e => console.log(e));
-        if (response && !response.ok && response.status != 404) {this.log(`Discord API Request failed ${response.status}, createDirectMessage, sendMessage\n${await response.text()}`, "error");this.log(response, "error")};
-        if (!response || !response.ok) return null;
-        return await response.json() as types.Message;
+    async deleteChannel({ channel_id, reason }: { channel_id: string, reason?: string }) {
+        return await this.sendDiscordRequest<Channel>("DELETE", `channels/${channel_id}`, undefined, reason);
+    };
+
+    async updateChannelOverwrite({ channel_id, overwrite_id, type, allow, deny, reason }: { channel_id: string, overwrite_id: string, type: ChannelOverwriteTypes, allow?: number | string, deny?: number | string, reason?: string }) {
+        return await this.sendDiscordRequest<Channel>("PUT", `channels/${channel_id}/permissions/${overwrite_id}`, {
+            type, allow, deny
+        }, reason);
+    };
+
+    async deleteChannelOverwrite({ channel_id, overwrite_id, reason }: { channel_id: string, overwrite_id: string, reason?: string }) {
+        return await this.sendDiscordRequest<Channel>("DELETE", `channels/${channel_id}/permissions/${overwrite_id}`, undefined, reason);
+    };
+
+
+    async createThread({ name, channel_id, type, message, reason }: { name: string, channel_id: string, type: ChannelTypes.PRIVATE_THREAD | ChannelTypes.PUBLIC_THREAD | ChannelTypes.ANNOUNCEMENT_THREAD, message?: MessageBody, reason?: string }) {
+        return await this.sendDiscordRequest<Channel>("POST", `channels/${channel_id}/threads`, {
+            name, type, message
+        }, reason);
+    };
+
+    async createThreadFromMessage({ name, channel_id, message_id, reason }: { name: string, channel_id: string, message_id: string, reason?: string }) {
+        return await this.sendDiscordRequest<Channel>("POST", `channels/${channel_id}/messages/${message_id}/threads`, {
+            name
+        }, reason);
+    };
+
+    async updateThread({ channel_id, name, archived, locked, applied_tags, reason }: { channel_id: string, name?: string, archived?: boolean, locked?: boolean, applied_tags?: string[], reason?: string }) {
+        return await this.sendDiscordRequest<Channel>("PATCH", `channels/${channel_id}`, {
+            name, archived, locked, applied_tags
+        }, reason);
+    };
+
+    async createMessage({ channel_id, content, embeds, components, attachments, tts }: { channel_id: string, content?: string, embeds?: EmbedBuilder[], components?: (SelectBuilder | RowBuilder)[], attachments?: MessageAttachment[], tts?: boolean }) {
+        return await this.sendDiscordRequest<Message>("POST", `channels/${channel_id}/messages`, {
+            content: content ?? "",
+            tts: Boolean(tts),
+            embeds: embeds?.map(embed => embed.toJSON()),
+            components: components?.map(component => component.toJSON()),
+            attachments: attachments?.length ? attachments?.map((file, i) => ({ id: `${i}`, description: file.description })) : null,
+        });
+    };
+
+    async createDirectMessage({ user_id, content, embeds, components, attachments, tts }: { user_id: string, content?: string, embeds?: EmbedBuilder[], components?: (SelectBuilder | RowBuilder)[], attachments?: MessageAttachment[], tts?: boolean }) {
+        const channel = await this.sendDiscordRequest<{ id: string }>("POST", `users/@me/channels`, { recipient_id: user_id });
+        if (!channel) return null;
+        return await this.sendDiscordRequest<Message>("POST", `channels/${channel.id}/messages`, {
+            content: content ?? "",
+            tts: Boolean(tts),
+            embeds: embeds?.map(embed => embed.toJSON()),
+            components: components?.map(component => component.toJSON()),
+            attachments: attachments?.length ? attachments?.map((file, i) => ({ id: `${i}`, description: file.description })) : null,
+        });
+    };
+
+    async getMessages({ channel_id, limit, around, before, after }: { channel_id: string, limit?: number, around?: string, before?: string, after?: string }) {
+        const params = [
+            limit ? `limit=${limit}` : "",
+            around ? `around=${around}` : "",
+            before ? `before=${before}` : "",
+            after ? `after=${after}` : ""
+        ].filter(Boolean).join("&");
+        return await this.sendDiscordRequest<Message[]>("GET", `channels/${channel_id}/messages${params ? "?" + params : ""}`);
+    };
+    async getMessage({ channel_id, message_id }: { channel_id: string, message_id: string }) {
+        return await this.sendDiscordRequest<Message>("GET", `channels/${channel_id}/messages/${message_id}`);
+    };
+    async deleteMessage({ channel_id, message_id, reason }: { channel_id: string, message_id: string, reason?: string }) {
+        return await this.sendDiscordRequest<void>("DELETE", `channels/${channel_id}/messages/${message_id}`, undefined, reason);
+    };
+    async editMessage({ channel_id, message_id, content, embeds, components, reason }: { channel_id: string, message_id: string, content?: string, embeds?: EmbedBuilder[], components?: (SelectBuilder | RowBuilder)[], reason?: string }) {
+        const body: any = {};
+        if (content !== undefined) body.content = content;
+        if (embeds !== undefined) body.embeds = embeds.map(e => e.toJSON());
+        if (components !== undefined) body.components = components.map(c => c.toJSON());
+        return await this.sendDiscordRequest<Message>("PATCH", `channels/${channel_id}/messages/${message_id}`, body, reason);
+    };
+
+    async addReaction({ channel_id, message_id, emoji }: { channel_id: string, message_id: string, emoji: string }) {
+        return await this.sendDiscordRequest<void>("PUT", `channels/${channel_id}/messages/${message_id}/reactions/${encodeURIComponent(emoji)}/@me`);
+    };
+    async removeReaction({ channel_id, message_id, emoji }: { channel_id: string, message_id: string, emoji: string }) {
+        return await this.sendDiscordRequest<void>("DELETE", `channels/${channel_id}/messages/${message_id}/reactions/${encodeURIComponent(emoji)}/@me`);
+    };
+    async crosspostMessage({ channel_id, message_id }: { channel_id: string, message_id: string }) {
+        return await this.sendDiscordRequest<Message>("POST", `channels/${channel_id}/messages/${message_id}/crosspost`);
+    };
+
+    async getEmojis({ guild_id }: { guild_id: string }) {
+        return await this.sendDiscordRequest<Emoji[]>("GET", `guilds/${guild_id}/emojis`);
+    };
+    async createEmoji({ guild_id, name, image, roles, reason }: { guild_id: string, name: string, image: string, roles?: string[], reason?: string }) {
+        return await this.sendDiscordRequest<Emoji>("POST", `guilds/${guild_id}/emojis`, { name, image, roles }, reason);
+    };
+    async editEmoji({ guild_id, emoji_id, name, roles, reason }: { guild_id: string, emoji_id: string, name?: string, roles?: string[], reason?: string }) {
+        return await this.sendDiscordRequest<Emoji>("PATCH", `guilds/${guild_id}/emojis/${emoji_id}`, { name, roles }, reason);
+    };
+    async deleteEmoji({ guild_id, emoji_id, reason }: { guild_id: string, emoji_id: string, reason?: string }) {
+        return await this.sendDiscordRequest<void>("DELETE", `guilds/${guild_id}/emojis/${emoji_id}`, undefined, reason);
     };
 
     async registerCommands() {
@@ -747,12 +599,20 @@ class Client extends EventEmitter {
 
     snowflakeToDate(snowflake:string) {
         //shout out chatGPT
-        const unixTime = (BigInt(snowflake) / BigInt(4194304)) + BigInt(1420070400000);
-        return new Date(Number(unixTime));
+        const unix_time = (BigInt(snowflake) >> BigInt(22)) + BigInt(1420070400000);
+        return new Date(Number(unix_time));
     };
     generateSnowflake() {
-        let timestamp = new Date((Math.floor(Date.now() / 1000)) * 4194304 - 1420070400000);
-        return (Math.ceil(timestamp.getTime() * 100)).toString();
+        const discord_epoch = 1420070400000n;
+        const timestamp = BigInt(Date.now() - Number(discord_epoch));
+        const worker_id = BigInt(this.config.application.id) % BigInt(1024);
+        const increment = BigInt(this.snowflake_increment++ & 0xFFF); // 12 bits
+
+        const snowflake = (timestamp << 22n) | (worker_id << 12n) | increment;
+
+        if (this.snowflake_increment >= 4096) this.snowflake_increment = 0; // wrap after 4096
+
+        return snowflake.toString();
     };
 };
 

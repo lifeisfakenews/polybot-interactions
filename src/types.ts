@@ -390,6 +390,50 @@ type GuildIncidentsData = {
 	raid_detected_at: string | null;
 }
 
+export type GuildBan = {
+    reason: string | null;
+    user: User;
+}
+
+export type GuildInvite = {
+    code: string;
+    guild?: Guild;
+    channel: Channel;
+    inviter?: User;
+    target_type?: number;
+    target_user?: User;
+    target_application?: any;
+    approximate_presence_count?: number;
+    approximate_member_count?: number;
+    expires_at?: string | null;
+    // ...add more fields as needed
+}
+
+export type AuditLog = {
+    audit_log_entries: AuditLogEntry[];
+    users: User[];
+    webhooks: any[];
+    integrations?: any[];
+    threads?: Channel[];
+    // ...add more fields as needed
+}
+
+export type AuditLogEntry = {
+    target_id: string | null;
+    changes?: AuditLogChange[];
+    user_id: string;
+    id: string;
+    action_type: number;
+    options?: any;
+    reason?: string;
+}
+
+export type AuditLogChange = {
+    key: string;
+    old_value?: any;
+    new_value?: any;
+}
+
 export type Channel = {
     id: string;
     type: ChannelTypes;

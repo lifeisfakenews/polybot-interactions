@@ -6,6 +6,8 @@ type RouteRateLimit = {
 
 type FetchOptions = Parameters<typeof fetch>[1];
 
+type LogLevel = "error" | "warn" | "info" | "debug";
+
 class REST {
     token: string;
     globalRateLimit: boolean;
@@ -17,6 +19,16 @@ class REST {
         this.globalRateLimit = false;
         this.globalRateLimitReset = 0;
         this.routeRateLimits = new Map();
+    };
+
+    private logToConsole(content:string, level:LogLevel = "info") {
+        const color = {
+            error: "\x1b[31m",
+            warn: "\x1b[33m",
+            info: "\x1b[36m",
+            debug: "\x1b[36m",
+        } as const;
+        console.log(`${color[level]}[PolyBot]\x1b[0m ${content}`);
     };
 
     async fetch(url:string, data:FetchOptions) {
@@ -51,7 +63,8 @@ class REST {
         if (response.status === 429 && response.headers.has("x-ratelimit-global")) {
             this.globalRateLimit = true;
             this.globalRateLimitReset = parseInt(response.headers.get("retry-after")!) + Date.now();
-        }
+            this.logToConsole(`Global rate limit hit, waiting ${this.globalRateLimitReset - Date.now()}ms before retrying`, "warn");
+        };
 
         return response;
     };
