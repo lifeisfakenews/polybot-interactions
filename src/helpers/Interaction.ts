@@ -242,8 +242,6 @@ class ComponentInteraction extends TextBasedInteraction {
     async modal(data:ModalBuilder) {
         const response_data = data.toJSON();
 
-        console.log(JSON.stringify({ type: types.ResponseTypes.MODAL, data: response_data }, null, 2));
-
         await this.respond({ type: types.ResponseTypes.MODAL, data: response_data });
 
         const interaction = this;
@@ -274,7 +272,7 @@ class InteractionOptions {
 
     private cmd_options: types.CommandOption[];
     private raw_options: types.CommandOption[];
-    private raw_rows: types.ModalActionRow[];
+    private raw_rows: (types.ModalActionRow|types.ModalLabelRow)[];
 
     constructor(interaction: types.Interaction) {
         const interaction_type = interaction.body.type;
@@ -319,11 +317,22 @@ class InteractionOptions {
         } else if (interaction_type === types.InteractionTypes.MODAL_SUBMIT) {
             this.raw_rows = interaction.body.data.components;
             this.raw_rows.forEach(row => {
-                row.components.forEach(component => {
+                if (row.type === types.MessageComponentTypes.ACTION_ROW) {
+                    row.components.forEach(component => {
+                        if (component.type === types.MessageComponentTypes.TEXT_INPUT) {
+                            this.options.set(component.custom_id, component.value);
+                        } else if (component.type === types.MessageComponentTypes.STRING_SELECT || component.type === types.MessageComponentTypes.MENTIONABLE_SELECT || component.type === types.MessageComponentTypes.ROLE_SELECT || component.type === types.MessageComponentTypes.USER_SELECT) {
+                            this.values.forEach(value => this.options.set(component.custom_id, this.parseSelectOption(value, this.resolved, component.type)));
+                        };
+                    });
+                } else {
+                    const component = row.component;
                     if (component.type === types.MessageComponentTypes.TEXT_INPUT) {
                         this.options.set(component.custom_id, component.value);
+                    } else if (component.type === types.MessageComponentTypes.STRING_SELECT || component.type === types.MessageComponentTypes.MENTIONABLE_SELECT || component.type === types.MessageComponentTypes.ROLE_SELECT || component.type === types.MessageComponentTypes.USER_SELECT) {
+                        this.values.forEach(value => this.options.set(component.custom_id, this.parseSelectOption(value, this.resolved, component.type)));
                     };
-                });
+                }
             });
         }
     };

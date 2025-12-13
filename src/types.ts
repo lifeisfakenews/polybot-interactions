@@ -139,9 +139,20 @@ export enum ModalTextInputStyles {
     "SHORT" = 1,
     "PARAGRAPH" = 2,
 }
+export type ModalSelectInput = {
+    type: MessageComponentTypes.STRING_SELECT | MessageComponentTypes.CHANNEL_SELECT | MessageComponentTypes.MENTIONABLE_SELECT | MessageComponentTypes.ROLE_SELECT | MessageComponentTypes.USER_SELECT;
+    custom_id: string;
+    values: string[];
+}
 export type ModalActionRow = {
     type: MessageComponentTypes.ACTION_ROW;
-    components: ModalTextInput[];
+    components: (ModalTextInput | ModalSelectInput)[];
+}
+export type ModalLabelRow = {
+    type: MessageComponentTypes.LABEL;
+    label: string;
+    custom_id?: string;
+    component: ModalTextInput | ModalSelectInput;
 }
 
 export type PartialChannel = {
