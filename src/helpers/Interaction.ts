@@ -243,6 +243,8 @@ class ComponentInteraction extends TextBasedInteraction {
         const response_data = data.toJSON() as ModalData & { flags?: number | null };
         response_data.flags = is_components_v2 ? 1 << 15 : null;
 
+        console.log(response_data);
+
         await this.respond({ type: types.ResponseTypes.MODAL, data: response_data });
 
         const interaction = this;
