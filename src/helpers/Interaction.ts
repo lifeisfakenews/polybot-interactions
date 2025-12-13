@@ -322,7 +322,8 @@ class InteractionOptions {
                         if (component.type === types.MessageComponentTypes.TEXT_INPUT) {
                             this.options.set(component.custom_id, component.value);
                         } else if (component.type === types.MessageComponentTypes.STRING_SELECT || component.type === types.MessageComponentTypes.MENTIONABLE_SELECT || component.type === types.MessageComponentTypes.ROLE_SELECT || component.type === types.MessageComponentTypes.USER_SELECT) {
-                            this.values.forEach(value => this.options.set(component.custom_id, this.parseSelectOption(value, this.resolved, component.type)));
+                            if (component.values.length === 1) this.options.set(component.custom_id, this.parseSelectOption(component.values[0], this.resolved, component.type));
+                            else this.options.set(component.custom_id, component.values.map(x => this.parseSelectOption(x, this.resolved, component.type)));
                         };
                     });
                 } else {
@@ -330,7 +331,8 @@ class InteractionOptions {
                     if (component.type === types.MessageComponentTypes.TEXT_INPUT) {
                         this.options.set(component.custom_id, component.value);
                     } else if (component.type === types.MessageComponentTypes.STRING_SELECT || component.type === types.MessageComponentTypes.MENTIONABLE_SELECT || component.type === types.MessageComponentTypes.ROLE_SELECT || component.type === types.MessageComponentTypes.USER_SELECT) {
-                        this.values.forEach(value => this.options.set(component.custom_id, this.parseSelectOption(value, this.resolved, component.type)));
+                        if (component.values.length === 1) this.options.set(component.custom_id, this.parseSelectOption(component.values[0], this.resolved, component.type));
+                        else this.options.set(component.custom_id, component.values.map(x => this.parseSelectOption(x, this.resolved, component.type)));
                     };
                 }
             });
