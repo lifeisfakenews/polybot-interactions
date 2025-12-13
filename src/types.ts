@@ -636,6 +636,15 @@ export enum MessageComponentTypes {
     "ROLE_SELECT" = 6,
     "MENTIONABLE_SELECT" = 7,
     "CHANNEL_SELECT" = 8,
+    "SECTION" = 9,
+    "TEXT_DISPLAY" = 10,
+    "THUMBNAIL" = 11,
+    "MEDIA_GALLERY" = 12,
+    "FILE" = 13,
+    "SEPARATOR" = 14,
+    "CONTAINER" = 17,
+    "LABEL" = 18,
+    "FILE_UPLOAD" = 19,
 }
 type MessageComponent = {
     type: MessageComponentTypes.ACTION_ROW;

@@ -119,6 +119,10 @@ export type SelectData = {
     min_values?: number;
     max_values?: number;
     disabled?: boolean;
+
+    // modal props (components v2)
+    label?: string;
+    required?: boolean;
 }
 
 
@@ -175,8 +179,17 @@ class SelectBuilder {
         this.data.disabled = disabled;
         return this;
     };
-    toJSON() {
+    setLabel(label:string) {
+        this.data.label = label;
+        return this;
+    };
+    setRequired(required:boolean) {
+        this.data.required = required;
+        return this;
+    };
+    toJSON(no_default_action_row = false) {
         // if (this.data.type == SelectTypes.TEXT && !this.data.options?.length) return {};
+        if (no_default_action_row) return this.data;
         return {
             type: 1,
             components: [this.data]
