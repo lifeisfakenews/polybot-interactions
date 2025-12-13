@@ -1,8 +1,8 @@
-import type { ChannelTypes, MessageComponentEmoji } from "../types";
+import { ChannelTypes, MessageComponentEmoji, MessageComponentTypes } from "../types";
 
 
 export type RowData = {
-    type: 1;
+    type: MessageComponentTypes.ACTION_ROW;
     components: ButtonData[];
 }
 
@@ -10,7 +10,7 @@ class RowBuilder {
     data: RowData;
 
     constructor(data?:RowData) {
-        this.data = data ?? {type: 1, components: []};
+        this.data = data ?? {type: MessageComponentTypes.ACTION_ROW, components: []};
     };
     addComponents(components:ButtonBuilder|ButtonBuilder[]) {
         if(Array.isArray(components)){
@@ -37,7 +37,7 @@ export enum ButtonStyles {
 }
 
 export type ButtonData = {
-    type: 2;
+    type: MessageComponentTypes.BUTTON;
     label?: string;
     custom_id?: string;
     style?: ButtonStyles;
@@ -50,7 +50,7 @@ class ButtonBuilder {
     data: ButtonData;
 
     constructor(button?:ButtonData|ButtonStyles|string) {
-        this.data = typeof button == "string" ? {custom_id: button, type: 2} : typeof button == "number" ? {type: 2, style: button} : button ?? {type: 2, style: ButtonStyles.SECONDARY};
+        this.data = typeof button == "string" ? {custom_id: button, type: MessageComponentTypes.BUTTON} : typeof button == "number" ? {type: MessageComponentTypes.BUTTON, style: button} : button ?? {type: MessageComponentTypes.BUTTON, style: ButtonStyles.SECONDARY};
     }
     setLabel(title:string) {
         this.data.label = title;
@@ -191,7 +191,7 @@ class SelectBuilder {
         // if (this.data.type == SelectTypes.TEXT && !this.data.options?.length) return {};
         if (no_default_action_row) return this.data;
         return {
-            type: 1,
+            type: MessageComponentTypes.ACTION_ROW as const,
             components: [this.data]
         };
     };

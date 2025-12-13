@@ -2,7 +2,7 @@ import { ModalTextInputStyles, MessageComponentTypes } from "../types";
 import { type SelectData, SelectBuilder } from "./ComponentBuilder";
 
 type ModalRowComponent = TextInputBuilder | SelectBuilder;
-type ModalRowData = TextInputData | SelectData;
+type ModalRowData = ReturnType<ModalRowComponent["toJSON"]>;
 
 export type ModalData = {
     title?: string;
@@ -58,11 +58,24 @@ class ModalBuilder {
 
         for (const row of this.data.components) {
             for (const comp of row.components) {
-                flattened_components.push({
-                    type: MessageComponentTypes.LABEL,
-                    label: comp.label ?? comp.custom_id,
-                    component: comp
-                });
+                if (comp.type == MessageComponentTypes.ACTION_ROW) {
+                    const component = comp.components[0];
+                    const label_text = component.label ?? component.custom_id;
+                    delete component.label;
+                    flattened_components.push({
+                        type: MessageComponentTypes.LABEL,
+                        label: label_text,
+                        component: component
+                    });
+                } else {
+                    const label_text = comp.label ?? comp.custom_id;
+                    delete comp.label;
+                    flattened_components.push({
+                        type: MessageComponentTypes.LABEL,
+                        label: label_text,
+                        component: comp
+                    });
+                };
             };
         };
 

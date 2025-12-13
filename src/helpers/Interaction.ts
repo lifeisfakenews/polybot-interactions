@@ -239,11 +239,10 @@ class ComponentInteraction extends TextBasedInteraction {
         return await this.respond({ type: types.ResponseTypes.UPDATE_MESSAGE_DEFERRED, data: { flags: ephemeral ? 1 << 6 : null } });
     };
 
-    async modal(data:ModalBuilder, is_components_v2 = false) {
-        const response_data = data.toJSON() as ModalData & { flags?: number | null };
-        response_data.flags = is_components_v2 ? 1 << 15 : null;
+    async modal(data:ModalBuilder) {
+        const response_data = data.toJSON();
 
-        console.log(JSON.stringify(response_data, null, 2));
+        console.log(JSON.stringify({ type: types.ResponseTypes.MODAL, data: response_data }, null, 2));
 
         await this.respond({ type: types.ResponseTypes.MODAL, data: response_data });
 
