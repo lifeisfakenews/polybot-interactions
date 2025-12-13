@@ -45,7 +45,7 @@ class ModalBuilder {
         for (const c of array) {
             this.data.components.push({
                 type: MessageComponentTypes.ACTION_ROW,
-                components: [c.toJSON()]
+                components: [c.toJSON(true)]
             });
         }
         return this;
@@ -58,14 +58,12 @@ class ModalBuilder {
 
         for (const row of this.data.components) {
             for (const comp of row.components) {
-                const label_text = comp.label;
-                if (label_text) {
-                    flattened_components.push({
-                        type: MessageComponentTypes.LABEL,
-                        label: label_text,
-                        component: comp
-                    });
-                };
+                if (comp.type === MessageComponentTypes.ACTION_ROW) continue;
+                flattened_components.push({
+                    type: MessageComponentTypes.LABEL,
+                    label: comp.label ?? comp.custom_id,
+                    component: comp
+                });
             };
         };
 
