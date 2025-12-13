@@ -1,11 +1,16 @@
 import { ModalTextInputStyles, MessageComponentTypes } from "../types";
 
+import { type SelectData, SelectBuilder } from "./ComponentBuilder";
+
+type ModalRowComponent = TextInputBuilder | SelectBuilder;
+type ModalRowData = TextInputData | SelectData;
+
 export type ModalData = {
     title?: string;
     custom_id?: string;
     components: {
         type: MessageComponentTypes.ACTION_ROW;
-        components: [TextInputData];
+        components: [ModalRowData];
     }[];
 }
 
@@ -23,7 +28,7 @@ class ModalBuilder {
         this.data.custom_id = id;
         return this;
     };
-    addComponents(components:TextInputBuilder[]|TextInputBuilder) {
+    addComponents(components:ModalRowComponent|ModalRowComponent[]) {
         if(Array.isArray(components)) {
             /* @ts-ignore */
             this.data.components = [...this.data.components, ...components.map(x => ({type: 1, components: [x.toJSON()]}))];

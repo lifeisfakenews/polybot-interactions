@@ -2,7 +2,7 @@ import * as types from "../types";
 import type { ServerResponse } from "http";
 
 import { Client } from "../Client";
-import { EmbedBuilder, ModalBuilder, RowBuilder, SelectBuilder } from "../builders";
+import { EmbedBuilder, ModalBuilder, ModalData, RowBuilder, SelectBuilder } from "../builders";
 import { sendJson } from "./http";
 
 type ErrorRequest = {
@@ -239,8 +239,11 @@ class ComponentInteraction extends TextBasedInteraction {
         return await this.respond({ type: types.ResponseTypes.UPDATE_MESSAGE_DEFERRED, data: { flags: ephemeral ? 1 << 6 : null } });
     };
 
-    async modal(data:ModalBuilder) {
-        await this.respond({ type: types.ResponseTypes.MODAL, data: data });
+    async modal(data:ModalBuilder, is_components_v2 = false) {
+        const response_data = data.toJSON() as ModalData & { flags?: number | null };
+        response_data.flags = is_components_v2 ? 1 << 15 : null;
+
+        await this.respond({ type: types.ResponseTypes.MODAL, data: response_data });
 
         const interaction = this;
 
