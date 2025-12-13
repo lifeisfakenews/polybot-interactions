@@ -58,7 +58,6 @@ class ModalBuilder {
 
         for (const row of this.data.components) {
             for (const comp of row.components) {
-                if (comp.type === MessageComponentTypes.ACTION_ROW) continue;
                 flattened_components.push({
                     type: MessageComponentTypes.LABEL,
                     label: comp.label ?? comp.custom_id,
