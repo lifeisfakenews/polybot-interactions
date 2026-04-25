@@ -468,6 +468,10 @@ class Client extends EventEmitter {
         return await this.sendDiscordRequest<Channel>("DELETE", `channels/${channel_id}`, undefined, reason);
     };
 
+    async followChannel({ channel_id, webhook_channel_id, reason }: { channel_id: string, webhook_channel_id: string, reason?: string }) {
+        return await this.sendDiscordRequest<{ channel_id: string, webhook_id: string }>("POST", `channels/${channel_id}/followers`, { webhook_channel_id }, reason);
+    };
+
     async updateChannelOverwrite({ channel_id, overwrite_id, type, allow, deny, reason }: { channel_id: string, overwrite_id: string, type: ChannelOverwriteTypes, allow?: number | string, deny?: number | string, reason?: string }) {
         return await this.sendDiscordRequest<Channel>("PUT", `channels/${channel_id}/permissions/${overwrite_id}`, {
             type, allow, deny

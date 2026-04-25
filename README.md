@@ -90,13 +90,19 @@ An example implementation can be found in the `examples` folder
 
 
 # Component Notes:
-1. Text Inputs (for modals) are automatically put into action rows
+1. Modals that have components v2 enabled will automatically generate label components. Use `.setLabel()` on the child component to specify the text.
+1. Modals not using components v2 will automatically put text inputs into action rows
 2. Select menus are automatically put into action rows
 3. Select menus default to type text, and adding options with .addOptions() automatically sets it to type text
 4. Modal interactions are handled automatically can be be used like so:
 ```ts
 const modal = new ModalBuilder("bla").setTitle("Modal Title").addComponents([
     new TextInputBuilder("bla_name").setLabel("Name").setRequired(true),
+    new SelectBuilder("bla_type").setLabel("Type").addOptions([
+        { label: "Option 1", value: "1" },
+        { label: "Option 2", value: "2" },
+        { label: "Option 3", value: "3" }
+    ])
 ]);
 const result = await interaction.modal(modal);
 await result.reply({ content: `${result.options.get("bla_name")}` });
