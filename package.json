@@ -1,6 +1,6 @@
 {
   "name": "polybot-interactions",
-  "version": "0.0.1-beta.25",
+  "version": "0.0.1-beta.26",
   "type": "module",
   "license": "GPL-3.0-only",
   "main": "./dist/cjs/index.cjs",

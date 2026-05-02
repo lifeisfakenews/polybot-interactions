@@ -16,6 +16,8 @@ import type {
 import { CommandInteraction, AutocompleteInteraction, ModalInteraction, ComponentInteraction } from "./helpers/Interaction";
 import { REST } from "./helpers/rest";
 
+import { setCustomList, moderateTextBasic } from "./moderation";
+
 type MessageBody = {
     content?: string;
     tts?: boolean;
@@ -27,22 +29,93 @@ type MessageBody = {
 
 export type Config<T = { [key: string]: any }> = T & {
     application: {
+        /**
+         * Your bot's token, obtained via the Discord Developer Portal.
+         * Required to use the Discord API
+         */
         token: string;
+        /**
+         * Your bot's ID, obtained via the Discord Developer Portal.
+         */
         id: string;
+        /**
+         * Your bot's public key, obtained via the Discord Developer Portal.
+         * Required to securely verify the signature of the interactions
+         */
         public_key: string;
     };
+    moderation?: {
+        /**
+         * Enable moderation features globally
+         * This will automatically check all command options and modal inputs
+         * See README for more details about the moderation system
+         */
+        enabled?: boolean;
+        /**
+         * Don't use these word lists for moderation
+         * Default: ["profane_strict"]
+         */
+        disabled_word_lists?: ("profane_strict" | "profane_mild" | "sexual_explicit" | "sexual_mild" | "slurs")[];
+        /**
+         * Use these word lists for moderation
+         * This takes priority over disabled_word_lists
+         * Default ["profane_mild", "sexual_explicit", "sexual_mild", "slurs"]
+         */
+        enabled_word_lists?: ("profane_strict" | "profane_mild" | "sexual_explicit" | "sexual_mild" | "slurs")[];
+        /**
+         * The response to send when a message is flagged
+         * Default: "Your input violates content policy"
+         */
+        flagged_response?: string;
+        /**
+         * Any extra blacklisted works to check for
+         * Array of [word, whole_word_only] pairs
+         * whole_word_only is a boolean that determines if the word must be a whole word
+         * Set to true it the word is likely to be used within another allowed word
+         * e.g. "rain" might be a blocked word, but "train" is fine, so set whole_word_only to true for "rain"
+         * e.g. "watch" might be a blocked word, setting whole_word_only to false would also block "watching", "watched", etc
+         */
+        blacklisted_words?: [string, boolean][];
+
+    };
     folders?: {
+        /**
+         * Directory to load commands from
+         * Default: ./commands
+         */
         commands?: string;
+        /**
+         * Directory to load components from
+         * Default: ./components
+         */
         components?: string;
     };
     logging?: {
+        /**
+         * Discord webhook URL that log messages are sent to
+         */
         webhook_url?: string;
     };
     web_server: {
+        /**
+         * Port to run the web server on
+         */
         port: number;
+        /**
+         * Endpoint to listen for interactions on
+         * Should match the URL in the Discord Developer Portal
+         * Default: /_polybot/interactions
+         */
         interactions_endpoint?: string;
+        /**
+         * Directory to serve static files from
+         */
         publicDir?: string;
     };
+    /**
+     * List of Discord user IDs that are considered owners/admins of the bot
+     * Commands / components with the staff_only flag set to true will only be available to these users
+     */
     owners: string[];
 };
 
@@ -101,6 +174,10 @@ class Client extends EventEmitter {
         this.web_server.listen(this.config.web_server.port, () => this.log(`Listening at port: ${this.config.web_server.port}`, "reload"));
 
         this.snowflake_increment = 0;
+
+        if (this.config.moderation?.enabled && this.config.moderation.blacklisted_words) {
+            setCustomList(this.config.moderation.blacklisted_words);
+        };
     };
 
     async init() {
@@ -188,9 +265,20 @@ class Client extends EventEmitter {
     };
 
     private async dispatchInteraction(interaction: types.Interaction) {
+        const moderate = () => {
+            if (!this.config.moderation?.enabled) return true;
+            for (const { value } of interaction.options.toArray()) {
+                const moderation_result = moderateTextBasic(value, { enabled_word_lists: this.config.moderation.enabled_word_lists, disabled_word_lists: this.config.moderation.disabled_word_lists });
+                if (moderation_result.isProfane) return false
+            };
+            return true;
+        };
         if (interaction.type === types.InteractionTypes.APPLICATION_COMMAND) {
             try {
                 const command = this.commands.get(interaction.command_name);
+                if (this.config.moderation?.enabled && !command?.skip_moderation) {
+                    if (!moderate()) return await interaction.reply({ content: this.config.moderation.flagged_response ?? "Your input violates content policy" }, true);
+                };
                 if (!command) return await interaction.reply({ content: `No handler found for command ${interaction.command_name}` }, true);
                 if (command.staff_only && !this.config.owners.includes(interaction.user.id)) return await interaction.reply({ content: "You don't have permission to use this command!" }, true);
 

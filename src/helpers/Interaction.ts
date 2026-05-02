@@ -5,6 +5,8 @@ import { Client } from "../Client";
 import { EmbedBuilder, ModalBuilder, RowBuilder, SelectBuilder } from "../builders";
 import { sendJson } from "./http";
 
+import { moderateTextBasic } from "../moderation";
+
 type ErrorRequest = {
     status: number;
     url: string;
@@ -114,6 +116,8 @@ class Interaction {
         const result = await fetch(`https://discord.com/api/webhooks/${this.client.config.application.id}/${this.token}/messages/@original`, {
             method: "GET"
         });
+        /* @ts-ignore */
+        if (!result.ok) this.client.logToConsole(`Failed to fetch initial response for ${this.body.data.custom_id ?? this.body.data.name} (${result.status})\n${await result.text()}`, "error");
         const reply = await result.json().catch(() => null);
         return reply as types.Message;
     };
@@ -148,7 +152,8 @@ class TextBasedInteraction extends Interaction {
         if (!request.ok) this.handleError(result, {status: request.status, url: request.url, method: "PATCH"}, data);
         return result;
     };
-    async followUp(data:MessageBody) {
+    async followUp(data:MessageBody, ephemeral?:boolean) {
+        data.flags = ephemeral ? 1 << 6 : null
         const request = await fetch(`https://discord.com/api/webhooks/${this.client.config.application.id}/${this.token}/`, {
             method: "POST",
             mode: "cors",
@@ -187,6 +192,17 @@ class CommandInteraction extends TextBasedInteraction {
         return new Promise<ModalInteraction|null>((resolve) => {
             function handleModalResponse(modal_interaction:ModalInteraction) {
                 if (modal_interaction.type === types.InteractionTypes.MODAL_SUBMIT && modal_interaction.custom_id === data.custom_id && modal_interaction.user.id === interaction.user.id) {
+                    if (interaction.client.config.moderation?.enabled) {
+                        for (const { value } of modal_interaction.options.toArray()) {
+                            const moderation_result = moderateTextBasic(value, { enabled_word_lists: interaction.client.config.moderation.enabled_word_lists, disabled_word_lists: interaction.client.config.moderation.disabled_word_lists });
+                            if (moderation_result.isProfane) {
+                                resolve(null);
+                                return interaction.reply({ content: interaction.client.config.moderation?.flagged_response ?? "Your input violates content policy" }, true).catch(() => {
+                                    interaction.followUp({ content: interaction.client.config.moderation?.flagged_response ?? "Your input violates content policy" }, true);
+                                });
+                            }
+                        };
+                    };
                     resolve(modal_interaction);
                     interaction.client.removeListener("interaction", handleModalResponse);
                 };
@@ -265,6 +281,17 @@ class ComponentInteraction extends TextBasedInteraction {
         return new Promise<ModalInteraction|null>((resolve) => {
             function handleModalResponse(modal_interaction:ModalInteraction) {
                 if (modal_interaction.type === types.InteractionTypes.MODAL_SUBMIT && modal_interaction.custom_id === data.custom_id && modal_interaction.user.id === interaction.user.id) {
+                    if (interaction.client.config.moderation?.enabled) {
+                        for (const { value } of modal_interaction.options.toArray()) {
+                            const moderation_result = moderateTextBasic(value, { enabled_word_lists: interaction.client.config.moderation.enabled_word_lists, disabled_word_lists: interaction.client.config.moderation.disabled_word_lists });
+                            if (moderation_result.isProfane) {
+                                resolve(null);
+                                return interaction.reply({ content: interaction.client.config.moderation?.flagged_response ?? "Your input violates content policy" }, true).catch(() => {
+                                    interaction.followUp({ content: interaction.client.config.moderation?.flagged_response ?? "Your input violates content policy" }, true);
+                                });
+                            }
+                        };
+                    };
                     resolve(modal_interaction);
                     interaction.client.removeListener("interaction", handleModalResponse);
                 };

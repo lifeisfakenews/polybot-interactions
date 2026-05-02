@@ -19,15 +19,34 @@ export type ExtendedRequest<T = { [key: string]: any }> = IncomingMessage & {
 
 export type Command = {
     visible?: boolean;
+    /**
+     * Only allows this command to be used by users defined in config.owners
+     */
     staff_only?: boolean;
+    /**
+     * Skips moderation checks for this command
+     */
+    skip_moderation?: boolean;
     command: CommandBuilder;
     execute: (client: Client, interaction: CommandInteraction) => Promise<void>;
     autocomplete?: (client: Client, interaction: AutocompleteInteraction) => Promise<void>;
 }
 export type Component = {
+    /**
+     * The custom ID of the component
+     * Please note that anything after the first double underscore is treated as a parameter and is ignored when matching custom IDs
+     * e.g. if the custom ID is "my_component__my_parameter", the custom ID `my_component` will be used to find a handler
+     */
     custom_id: string;
     type: ComponentTypes;
+    /**
+     * Only allows this component to be used by users defined in config.owners
+     */
     staff_only?: boolean;
+    /**
+     * Skips moderation checks for this component
+     */
+    skip_moderation?: boolean;
     execute: (client: Client, interaction: ComponentInteraction) => Promise<void>;
 }
 export enum ComponentTypes {

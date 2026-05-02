@@ -13,6 +13,7 @@
     "moduleResolution": "node",
     "allowImportingTsExtensions": false,
     "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
 
     "verbatimModuleSyntax": false,
     "noEmit": true,

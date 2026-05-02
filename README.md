@@ -126,6 +126,29 @@ client.addRouteHandler("/api/test", (req, res) => {
 The req and res objects are `IncomingMessage` and `ServerResponse` from the `http` module, with some additonal express-like methods / properties.
 
 
+# Moderation
+
+The framework has a built in moderation system that can be enabled by setting `moderation.enabled` to `true` in the config.
+
+This is disabled by default.
+
+The system will automatically check all command options and modal inputs for profanity.
+
+You can add custom blacklisted words to the system by setting `moderation.blacklisted_words` in the config.
+
+Enable/disable specific word lists by setting `moderation.enabled_word_lists` and `moderation.disabled_word_lists` in the config.
+
+By default, the following word lists are enabled:
+
+- `slurs`
+- `sexual_explicit`
+- `sexual_mild`
+- `profane_mild`
+
+The list `profane_strict` is also available but is disabled by default.
+This list contains words like "butt" that are not typically considered profane but some people may prefer them to be filtered out.
+
+
 ## License
 
 MIT

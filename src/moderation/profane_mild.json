@@ -1,0 +1,23 @@
+[
+    ["arsehole", false],
+    ["ass", true],
+    ["asshole", false],
+    ["bastard", false],
+    ["bastardo", false],
+    ["bastinado", false],
+    ["bitch", false],
+    ["bitches", false],
+    ["bollocks", false],
+    ["bullshit", false],
+    ["clusterfuck", false],
+    ["cunt", true],
+    ["motherfucker", false],
+    ["neonazi", false],
+    ["piece of shit", false],
+    ["piss", false],
+    ["pissing", false],
+    ["shit", false],
+    ["shitty", false],
+    ["twat", true],
+    ["twats", true]
+]
