@@ -1,6 +1,6 @@
 {
   "name": "polybot-interactions",
-  "version": "0.0.1-beta.20",
+  "version": "0.0.1-beta.24",
   "type": "module",
   "license": "GPL-3.0-only",
   "main": "./dist/cjs/index.cjs",
@@ -13,26 +13,31 @@
       "require": "./dist/cjs/index.cjs"
     }
   },
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build:esm": "tsc -p tsconfig.build.json",
     "build:cjs": "tsc -p tsconfig.build.cjs.json",
     "build": "npm run build:esm && npm run build:cjs",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "publishBeta": "npm publish --tag beta --access public"
   },
   "dependencies": {
-    "cookie-parser": "^1.4.6",
+    "cookie-parser": "^1.4.7",
     "tinycolor2": "^1.6.0",
     "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/cookie-parser": "^1.4.8",
+    "@types/cookie-parser": "^1.4.10",
+    "@types/node": "^25.6.0",
     "@types/tinycolor2": "^1.4.6"
   },
   "peerDependencies": {
     "typescript": "^5.9.2"
   },
-
   "repository": "git@github.com:lifeisfakenews/polybot-interactions.git"
 }

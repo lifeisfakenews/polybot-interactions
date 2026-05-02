@@ -1,4 +1,4 @@
-import { ChannelTypes, CommandOptionTypes as OptionTypes, CommandTypes, IntegrationTypes } from "../types";
+import { ChannelTypes, CommandInteractionDataOptionTypes as OptionTypes, CommandTypes, IntegrationTypes } from "../types";
 
 export type CommandData = {
     type?: CommandTypes;

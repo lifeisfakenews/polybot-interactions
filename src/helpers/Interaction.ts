@@ -2,7 +2,7 @@ import * as types from "../types";
 import type { ServerResponse } from "http";
 
 import { Client } from "../Client";
-import { EmbedBuilder, ModalBuilder, ModalData, RowBuilder, SelectBuilder } from "../builders";
+import { EmbedBuilder, ModalBuilder, RowBuilder, SelectBuilder } from "../builders";
 import { sendJson } from "./http";
 
 type ErrorRequest = {
@@ -20,6 +20,11 @@ type MessageBody = {
     flags?: number | null;
 }
 
+type CommandAutocompleteChoice = {
+    name: string;
+    value: string;
+}
+
 
 type ResponseData = {
     type: types.ResponseTypes.SEND_MESSAGE | types.ResponseTypes.UPDATE_MESSAGE;
@@ -35,7 +40,7 @@ type ResponseData = {
 } | {
     type: types.ResponseTypes.AUTOCOMPLETE;
     data: {
-        choices: types.CommandAutocompleteChoice[];
+        choices: CommandAutocompleteChoice[];
     };
 } | {
     type: types.ResponseTypes;
@@ -58,6 +63,10 @@ class Interaction {
     channelId: string;
     guildId: string | null;
 
+    // used by the internal handler to track if it has been responded to within the 15 seconds
+    responded: boolean;
+    received_at: Date;
+
     constructor(body:types.InteractionBody, res:ServerResponse, client:Client) {
         this.body = body;
         this.res = res;
@@ -78,6 +87,8 @@ class Interaction {
         this.type = body.type;
         this.locale = body.locale ?? null;
         this.channelId = body.channel_id;
+        this.responded = false;
+        this.received_at = new Date();
     };
 
     async handleError(result:any, request:ErrorRequest, data:{[key:string]:any}) {
@@ -94,7 +105,12 @@ class Interaction {
         });
     };
     async respond(data: ResponseData) {
+        if (this.responded) throw new Error("Cannot respond to an interaction twice");
         sendJson(this.res, 200, data);
+        this.responded = true;
+        const time_since_received = (Date.now() - this.received_at.getTime()) / 1000;
+        /* @ts-ignore */
+        if (time_since_received > 3) this.client.logToConsole(`Interaction handler for ${this.body.data.custom_id ?? this.body.data.name} took longer than 3 seconds (${time_since_received.toFixed(2)}s) to send an initial response`, "warn");
         const result = await fetch(`https://discord.com/api/webhooks/${this.client.config.application.id}/${this.token}/messages/@original`, {
             method: "GET"
         });
@@ -170,7 +186,7 @@ class CommandInteraction extends TextBasedInteraction {
 
         return new Promise<ModalInteraction|null>((resolve) => {
             function handleModalResponse(modal_interaction:ModalInteraction) {
-                if (modal_interaction.type === types.InteractionTypes.MODAL_SUBMIT && modal_interaction.custom_id === data.data.custom_id && modal_interaction.user.id === interaction.user.id) {
+                if (modal_interaction.type === types.InteractionTypes.MODAL_SUBMIT && modal_interaction.custom_id === data.custom_id && modal_interaction.user.id === interaction.user.id) {
                     resolve(modal_interaction);
                     interaction.client.removeListener("interaction", handleModalResponse);
                 };
@@ -179,7 +195,7 @@ class CommandInteraction extends TextBasedInteraction {
             setTimeout(() => {
                 interaction.client.removeListener("interaction", handleModalResponse);
                 resolve(null);
-            }, 240_000);
+            }, 1000 * 60 * 15);
         });
     };
 };
@@ -195,7 +211,7 @@ class AutocompleteInteraction extends Interaction {
         this.command_name = body.data.name;
         this.options = new InteractionOptions(this);
     };
-    async autocomplete(data:types.CommandAutocompleteChoice[]) {
+    async autocomplete(data:CommandAutocompleteChoice[]) {
         return await this.respond({ type: types.ResponseTypes.AUTOCOMPLETE, data: { choices: data.slice(0, 25) } });
     };
 };
@@ -248,7 +264,7 @@ class ComponentInteraction extends TextBasedInteraction {
 
         return new Promise<ModalInteraction|null>((resolve) => {
             function handleModalResponse(modal_interaction:ModalInteraction) {
-                if (modal_interaction.type === types.InteractionTypes.MODAL_SUBMIT && modal_interaction.custom_id === data.data.custom_id && modal_interaction.user.id === interaction.user.id) {
+                if (modal_interaction.type === types.InteractionTypes.MODAL_SUBMIT && modal_interaction.custom_id === data.custom_id && modal_interaction.user.id === interaction.user.id) {
                     resolve(modal_interaction);
                     interaction.client.removeListener("interaction", handleModalResponse);
                 };
@@ -257,11 +273,32 @@ class ComponentInteraction extends TextBasedInteraction {
             setTimeout(() => {
                 interaction.client.removeListener("interaction", handleModalResponse);
                 resolve(null);
-            }, 240_000);
+            }, 1000 * 60 * 15);
         });
     };
 };
 
+type OptionNameToValueType = {
+    textInput: string;
+    stringSelect: string[];
+    userSelect: (types.PartialGuildMember & { user: types.User })[];
+    roleSelect: types.GuildRole[];
+    mentionableSelect: ((types.PartialGuildMember & { user: types.User }) | types.GuildRole)[];
+    channelSelect: types.PartialChannel[];
+    
+    radioGroup: string;
+    checkboxGroup: string[];
+    checkbox: boolean;
+    attachment: types.MessageAttachment[];
+    
+    string: string;
+    number: number;
+    boolean: boolean;
+    user: types.PartialGuildMember & { user: types.User };
+    role: types.GuildRole;
+    mentionable: (types.PartialGuildMember & { user: types.User }) | types.GuildRole;
+    channel: types.PartialChannel;
+}
 
 class InteractionOptions {
     options: Map<string, any>;
@@ -270,9 +307,9 @@ class InteractionOptions {
     subcommand?: string;
     group?: string;
 
-    private cmd_options: types.CommandOption[];
-    private raw_options: types.CommandOption[];
-    private raw_rows: (types.ModalActionRow|types.ModalLabelRow)[];
+    private cmd_options: types.CommandInteractionData["options"];
+    private raw_options: types.CommandInteractionData["options"];
+    private raw_rows: types.ModalInteractionData["components"];
 
     constructor(interaction: types.Interaction) {
         const interaction_type = interaction.body.type;
@@ -291,17 +328,17 @@ class InteractionOptions {
             this.raw_options = interaction.body.data.options ?? [];
             this.cmd_options = this.raw_options;
             this.raw_options.forEach(option => {
-                if (option.type === types.CommandOptionTypes.SUB_COMMAND_GROUP) {
+                if (option.type === types.CommandInteractionDataOptionTypes.SUB_COMMAND_GROUP) {
                     this.group = option.name;
                     this.cmd_options = option.options;
                     option.options.forEach(sub_option => {
-                        if (sub_option.type === types.CommandOptionTypes.SUB_COMMAND) {
+                        if (sub_option.type === types.CommandInteractionDataOptionTypes.SUB_COMMAND) {
                             this.subcommand = sub_option.name;
                             this.cmd_options = sub_option.options;
                             sub_option.options.forEach(sub_sub_option => this.options.set(sub_sub_option.name, this.parseCommmandOption(sub_sub_option, this.resolved)));
                         }
                     });
-                } else if (option.type === types.CommandOptionTypes.SUB_COMMAND) {
+                } else if (option.type === types.CommandInteractionDataOptionTypes.SUB_COMMAND) {
                     this.subcommand = option.name;
                     this.cmd_options = option.options;
                     option.options.forEach(sub_option => this.options.set(sub_option.name, this.parseCommmandOption(sub_option, this.resolved)));
@@ -317,51 +354,40 @@ class InteractionOptions {
         } else if (interaction_type === types.InteractionTypes.MODAL_SUBMIT) {
             this.raw_rows = interaction.body.data.components;
             this.raw_rows.forEach(row => {
-                if (row.type === types.MessageComponentTypes.ACTION_ROW) {
-                    row.components.forEach(component => {
-                        if (component.type === types.MessageComponentTypes.TEXT_INPUT) {
-                            this.options.set(component.custom_id, component.value);
-                        } else if (component.type === types.MessageComponentTypes.STRING_SELECT || component.type === types.MessageComponentTypes.MENTIONABLE_SELECT || component.type === types.MessageComponentTypes.ROLE_SELECT || component.type === types.MessageComponentTypes.USER_SELECT) {
-                            if (component.values.length === 1) this.options.set(component.custom_id, this.parseSelectOption(component.values[0], this.resolved, component.type));
-                            else this.options.set(component.custom_id, component.values.map(x => this.parseSelectOption(x, this.resolved, component.type)));
-                        };
-                    });
+                const component = row.component;
+                if (component.type === types.ModalComponentTypes.STRING_SELECT || component.type === types.ModalComponentTypes.MENTIONABLE_SELECT || component.type === types.ModalComponentTypes.ROLE_SELECT || component.type === types.ModalComponentTypes.USER_SELECT) {
+                    this.options.set(component.custom_id, component.values.map(x => this.parseSelectOption(x, this.resolved, component.type)));
                 } else {
-                    const component = row.component;
-                    if (component.type === types.MessageComponentTypes.TEXT_INPUT) {
-                        this.options.set(component.custom_id, component.value);
-                    } else if (component.type === types.MessageComponentTypes.STRING_SELECT || component.type === types.MessageComponentTypes.MENTIONABLE_SELECT || component.type === types.MessageComponentTypes.ROLE_SELECT || component.type === types.MessageComponentTypes.USER_SELECT) {
-                        if (component.values.length === 1) this.options.set(component.custom_id, this.parseSelectOption(component.values[0], this.resolved, component.type));
-                        else this.options.set(component.custom_id, component.values.map(x => this.parseSelectOption(x, this.resolved, component.type)));
-                    };
-                }
+                    /* @ts-ignore */
+                    this.options.set(component.custom_id, component.values ?? component.value);
+                };
             });
         }
     };
 
-    private parseCommmandOption(option:types.CommandOption, resolved:types.InteractionResolvedData) {
-        if (option.type === types.CommandOptionTypes.USER) {
+    private parseCommmandOption(option:types.CommandInteractionData["options"][0], resolved:types.InteractionResolvedData) {
+        if (option.type === types.CommandInteractionDataOptionTypes.USER) {
             resolved.users ??= {};
             const user = resolved.users[option.value] ?? {id: option.value};
             const member = resolved.members && resolved.members[option.value] ? resolved.members[option.value] : {};
-            return {...user, member};
-        } else if (option.type === types.CommandOptionTypes.CHANNEL) {
+            return {...member, user};
+        } else if (option.type === types.CommandInteractionDataOptionTypes.CHANNEL) {
             resolved.channels ??= {};
             const channel = resolved.channels[option.value] ?? {id: option.value};
             return channel;
-        } else if (option.type === types.CommandOptionTypes.ROLE) {
+        } else if (option.type === types.CommandInteractionDataOptionTypes.ROLE) {
             resolved.roles ??= {};
             const role = resolved.roles[option.value] ?? {id: option.value};
             return role;
-        } else if (option.type === types.CommandOptionTypes.ATTACHMENT) {
+        } else if (option.type === types.CommandInteractionDataOptionTypes.ATTACHMENT) {
             resolved.attachments ??= {};
             const attachment = resolved.attachments[option.value] ?? {id: option.value};
             return attachment;
-        } else if (option.type === types.CommandOptionTypes.STRING || option.type === types.CommandOptionTypes.BOOLEAN || option.type === types.CommandOptionTypes.NUMBER || option.type === types.CommandOptionTypes.INTEGER || option.type === types.CommandOptionTypes.MENTIONABLE) {
+        } else if (option.type === types.CommandInteractionDataOptionTypes.STRING || option.type === types.CommandInteractionDataOptionTypes.BOOLEAN || option.type === types.CommandInteractionDataOptionTypes.NUMBER || option.type === types.CommandInteractionDataOptionTypes.INTEGER || option.type === types.CommandInteractionDataOptionTypes.MENTIONABLE) {
             return option.value;
         };
     };
-    private parseSelectOption(value:string, resolved:types.InteractionResolvedData, type:types.MessageComponentTypes) {
+    private parseSelectOption(value:string, resolved:types.InteractionResolvedData, type:types.MessageComponentTypes | types.ModalComponentTypes) {
         if (type === types.MessageComponentTypes.USER_SELECT) {
             resolved.users ??= {};
             const user = resolved.users[value] ?? {id: value};
@@ -380,7 +406,7 @@ class InteractionOptions {
         };
     };
 
-    get(name:string) {
+    get<T extends keyof OptionNameToValueType>(name:string): OptionNameToValueType[T] {
         return this.options.get(name);
     }
     getAll() {

@@ -62,6 +62,7 @@ interface ClientEvents {
 
 const log_formats = {
     "error": { color: 0xEA2920, name: "Client Error", level: "error" },
+    "warn": { color: 0xFFB300, name: "Client Warning", level: "warn" },
     "reload": { color: 0x37FB70, name: "Bot Restarted", level: "info" },
     "eval": { color: 0xFF36E1, name: "Code Evalutated", level: "info" },
     "other": { color: 0x00B5AE, name: "Other Log Message", level: "info" },
@@ -193,6 +194,9 @@ class Client extends EventEmitter {
                 if (!command) return await interaction.reply({ content: `No handler found for command ${interaction.command_name}` }, true);
                 if (command.staff_only && !this.config.owners.includes(interaction.user.id)) return await interaction.reply({ content: "You don't have permission to use this command!" }, true);
 
+                setTimeout(() => {
+                    if (!interaction.responded) this.logToConsole(`3s timeout reached for command ${interaction.command_name} with no response`, "warn");
+                }, 3000);
                 await command.execute(this, interaction);
             } catch (e:any) {
                 const error_id = this.generateSnowflake();
@@ -203,6 +207,11 @@ class Client extends EventEmitter {
             try {
                 const command = this.commands.get(interaction.command_name);
                 if (!command || !command.autocomplete) return await interaction.autocomplete([{ name: "No autocomplete handler has been defined", value: "__error__no_handler" }])
+                if (command.staff_only && !this.config.owners.includes(interaction.user.id)) return await interaction.autocomplete([{ name: "You don't have permission to use this command!", value: "__error__no_permission" }]);
+
+                setTimeout(() => {
+                    if (!interaction.responded) this.logToConsole(`3s timeout reached for autocomplete ${interaction.command_name} with no response`, "warn");
+                }, 3000);
                 await command.autocomplete(this, interaction);
             } catch (e:any) {
                 const error_id = this.generateSnowflake();
@@ -214,9 +223,12 @@ class Client extends EventEmitter {
                 if (!interaction.custom_id) return await interaction.reply({ content: "Invalid component interaction" }, true);
                 const custom_id = interaction.custom_id.split("__")[0];
                 const component = this.components.get(custom_id);
-                if (!component) return await interaction.reply({ content: `No handler found for ${custom_id}\nNote that anything after double underscores (__) is treated as a parameter and is ignored.` }, true);
+                if (!component) return await interaction.reply({ content: `No handler found for ${custom_id}\nNote that anything after double underscores (__) is treated as a parameter and is ignored when matching custom IDs.` }, true);
                 if (component.staff_only && !this.config.owners.includes(interaction.user.id)) return await interaction.reply({ content: "You don't have permission to use this component!" }, true);
 
+                setTimeout(() => {
+                    if (!interaction.responded) this.logToConsole(`3s timeout reached for command ${interaction.custom_id} with no response`, "warn");
+                }, 3000);
                 await component.execute(this, interaction);
             } catch (e:any) {
                 const error_id = this.generateSnowflake();
