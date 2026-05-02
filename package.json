@@ -1,6 +1,6 @@
 {
   "name": "polybot-interactions",
-  "version": "0.0.1-beta.24",
+  "version": "0.0.1-beta.25",
   "type": "module",
   "license": "GPL-3.0-only",
   "main": "./dist/cjs/index.cjs",
@@ -23,7 +23,7 @@
     "build:cjs": "tsc -p tsconfig.build.cjs.json",
     "build": "npm run build:esm && npm run build:cjs",
     "prepublishOnly": "npm run build",
-    "publishBeta": "npm publish --tag beta --access public"
+    "publishBeta": "npm login && npm publish --tag beta --access public"
   },
   "dependencies": {
     "cookie-parser": "^1.4.7",
